@@ -23,3 +23,57 @@ models:
     description: Bicubic (Catmull-Rom) resampling only. Quality-evaluation baseline.
     recommended_content: [baseline]
     licence: n/a
+
+  - id: realesrgan-x4plus
+    kind: sr
+    scale: 4
+    architecture: rrdbnet
+    params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 23, num_grow_ch: 32, scale: 4}
+    pad_multiple: 1
+    state_dict_key: params_ema
+    description: Real-ESRGAN x4plus. General-purpose model for real-world, compressed live-action footage.
+    recommended_content: [live-action, general, photos]
+    source_url: https://github.com/xinntao/Real-ESRGAN
+    licence: BSD-3-Clause
+    licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
+    weights:
+      url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.1.0/RealESRGAN_x4plus.pth
+      sha256: 4fa0d38905f75ac06eb49a7951b426670021be3018265fd191d2125df9d682f1
+      filename: RealESRGAN_x4plus.pth
+      size_bytes: 67040989
+
+  - id: realesrgan-x2plus
+    kind: sr
+    scale: 2
+    architecture: rrdbnet
+    params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 23, num_grow_ch: 32, scale: 2}
+    pad_multiple: 2
+    state_dict_key: params_ema
+    description: Real-ESRGAN x2plus. Same network at 2x (pixel-unshuffled input); faster per output pixel.
+    recommended_content: [live-action, general, photos]
+    source_url: https://github.com/xinntao/Real-ESRGAN
+    licence: BSD-3-Clause
+    licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
+    weights:
+      url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.1/RealESRGAN_x2plus.pth
+      sha256: 49fafd45f8fd7aa8d31ab2a22d14d91b536c34494a5cfe31eb5d89c2fa266abb
+      filename: RealESRGAN_x2plus.pth
+      size_bytes: 67061725
+
+  - id: realesr-animevideov3
+    kind: sr
+    scale: 4
+    architecture: srvgg
+    params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_conv: 16, upscale: 4, act_type: prelu}
+    pad_multiple: 1
+    state_dict_key: params
+    description: Real-ESRGAN AnimeVideo v3 (SRVGGNetCompact). Lightweight, built for anime/cartoon video.
+    recommended_content: [animation, anime, cartoons]
+    source_url: https://github.com/xinntao/Real-ESRGAN
+    licence: BSD-3-Clause
+    licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
+    weights:
+      url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth
+      sha256: b8a8376811077954d82ca3fcf476f1ac3da3e8a68a4f4d71363008000a18b75d
+      filename: realesr-animevideov3.pth
+      size_bytes: 2504012

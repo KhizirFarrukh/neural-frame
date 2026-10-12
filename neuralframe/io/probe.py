@@ -232,6 +232,11 @@ def probe(path: Path, tools: FFmpegTools) -> MediaInfo:
 
     if video is None and not audio:
         raise NeuralFrameError(ErrorCode.PROBE_FAILED, f"{path} contains no audio or video streams")
+    if video is not None and video.is_still_image and video.rotation == 0:
+        # Still images carry EXIF orientation as *frame* side data, which FFmpeg's autorotate applies.
+        frame_rotation = _first_frame_rotation(path, tools, video.index)
+        if frame_rotation:
+            video = video.model_copy(update={"rotation": frame_rotation})
 
     return MediaInfo(
         path=path,
@@ -250,6 +255,23 @@ def probe(path: Path, tools: FFmpegTools) -> MediaInfo:
         chapters=chapters,
         tags={str(k): str(v) for k, v in (fmt.get("tags") or {}).items()},
     )
+
+
+def _first_frame_rotation(path: Path, tools: FFmpegTools, stream_index: int) -> int:
+    try:
+        data = run_ffprobe_json(
+            tools,
+            ["-select_streams", str(stream_index), "-read_intervals", "%+#1", "-show_frames",
+             "-show_entries", "frame=side_data_list", str(path)],
+            what="ffprobe first frame",
+        )
+    except NeuralFrameError:
+        return 0
+    for frame in data.get("frames") or []:
+        for side in frame.get("side_data_list") or []:
+            if "rotation" in side:
+                return round(float(side["rotation"])) % 360
+    return 0
 
 
 def scan_frames(path: Path, tools: FFmpegTools, stream_index: int) -> FrameTimeline:

@@ -232,7 +232,10 @@ def _print_plan(plan: JobPlan) -> None:
     table.add_row("encode", e.describe())
     tags = e.color.ffmpeg_tags()
     table.add_row("colour", f"{tags['colorspace']}/{tags['color_primaries']}/{tags['color_trc']} {tags['color_range']}")
-    table.add_row("frames", f"{plan.total_frames} in {len(plan.chunks.chunks)} chunk(s), ops={plan.ops}")
+    where = f"device ({plan.inference.device})" if plan.mode == "device" and plan.inference else plan.mode
+    if plan.mode == "host":
+        where = f"host (ops={plan.ops})"
+    table.add_row("frames", f"{plan.total_frames} in {len(plan.chunks.chunks)} chunk(s), pipeline {where}")
     console.print(table)
     for note in plan.notes:
         console.print(f"  [dim]- {note}[/]")
@@ -241,8 +244,10 @@ def _print_plan(plan: JobPlan) -> None:
 @app.command()
 def upscale(
     ctx: typer.Context,
-    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Input video."),
-    output: Path = typer.Option(..., "--output", "-o", help="Output file (.mkv, .mp4, .mov, .webm)."),
+    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Input video or image."),
+    output: Path = typer.Option(
+        ..., "--output", "-o", help="Output file: video (.mkv .mp4 .mov .webm) or image (.png .jpg .webp .tif .bmp)."
+    ),
     model: str | None = typer.Option(None, "--model", "-m", help="Model id (see `neuralframe models list`)."),
     target: str | None = typer.Option(
         None, "--target", "-t", help="4k (default), 1440p, 1080p, 8k, native, 1920x1080, x2"
@@ -268,7 +273,7 @@ def upscale(
     overwrite: bool = typer.Option(False, "--overwrite", "-y", help="Replace an existing output."),
     keep_work: bool = typer.Option(False, "--keep-work", help="Keep intermediate segments."),
 ) -> None:
-    """Upscale a video (default target: 4K, aspect ratio preserved)."""
+    """Upscale a video or image (default target: 4K, aspect ratio preserved)."""
     state = _state(ctx)
     try:
         spec = JobSpec(
@@ -337,12 +342,18 @@ def upscale(
         return
 
     report = result.report
-    tp = report["throughput"]
-    console.print(
-        f"[bold green]done[/] {result.output} ({report['output']['size']}, {report['output']['frames']} frames) "
-        f"in {report['timings']['total_s']:.1f}s - pipeline {tp['pipeline_fps']} fps, "
-        f"bottleneck: {tp['bottleneck']}"
-    )
+    if report.get("kind") == "image":
+        console.print(
+            f"[bold green]done[/] {result.output} ({report['output']['size']}) "
+            f"in {report['timings']['total_s']:.1f}s"
+        )
+    else:
+        tp = report["throughput"]
+        console.print(
+            f"[bold green]done[/] {result.output} ({report['output']['size']}, {report['output']['frames']} "
+            f"frames) in {report['timings']['total_s']:.1f}s - pipeline {tp['pipeline_fps']} fps, "
+            f"bottleneck: {tp['bottleneck']}"
+        )
     console.print(f"[dim]report: {result.report_path}[/]")
 
 
@@ -362,10 +373,66 @@ def models_list(as_json: bool = typer.Option(False, "--json")) -> None:
         return
     table = Table(title="Models", title_justify="left")
     for col in ("id", "kind", "scale", "input", "licence", "recommended for"):
-        table.add_column(col)
+        table.add_column(col, no_wrap=col == "id")
     for m in registry.all():
         table.add_row(m.id, m.kind, f"x{m.scale}", m.input, m.licence, ", ".join(m.recommended_content))
     console.print(table)
+
+
+@models_app.command("download")
+def models_download(
+    ctx: typer.Context,
+    model_ids: list[str] = typer.Argument(None, help="Model ids (default: all neural models)."),
+) -> None:
+    """Download and SHA256-verify model weights into the cache."""
+    from rich.progress import DownloadColumn, TransferSpeedColumn
+
+    from neuralframe.models.download import ensure_weights
+    from neuralframe.models.registry import ModelRegistry
+
+    settings = _state(ctx).settings
+    registry = ModelRegistry.load()
+    specs = [registry.get(m) for m in model_ids] if model_ids else [m for m in registry.all() if m.weights]
+    for spec in specs:
+        if spec.weights is None:
+            console.print(f"{spec.id}: classical model, nothing to download")
+            continue
+        with Progress(TextColumn(spec.id), BarColumn(), DownloadColumn(), TransferSpeedColumn(),
+                      console=console) as bar:
+            task = bar.add_task("dl", total=spec.weights.size_bytes)
+
+            def update(done: int, total: int | None, _task: Any = task, _bar: Progress = bar) -> None:
+                _bar.update(_task, completed=done, total=total)
+
+            try:
+                path = ensure_weights(spec, settings.paths.models(), progress=update)
+            except NeuralFrameError as exc:
+                _fail(exc)
+                return
+        console.print(f"[green]ok[/] {spec.id} -> {path} ({spec.licence})")
+
+
+@models_app.command("verify")
+def models_verify(ctx: typer.Context) -> None:
+    """Check SHA256 of every downloaded weight file."""
+    from neuralframe.models.download import verify_weights, weights_path
+    from neuralframe.models.registry import ModelRegistry
+
+    settings = _state(ctx).settings
+    bad = 0
+    for spec in ModelRegistry.load().all():
+        if spec.weights is None:
+            continue
+        path = weights_path(spec, settings.paths.models())
+        if not path.is_file():
+            console.print(f"[dim]{spec.id}: not downloaded[/]")
+        elif verify_weights(spec, settings.paths.models()):
+            console.print(f"[green]{spec.id}: ok[/]")
+        else:
+            bad += 1
+            console.print(f"[red]{spec.id}: SHA256 mismatch[/] ({path})")
+    if bad:
+        raise typer.Exit(1)
 
 
 def main() -> None:

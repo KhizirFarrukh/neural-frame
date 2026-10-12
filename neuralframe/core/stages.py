@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from collections.abc import Callable, Iterator
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 import numpy.typing as npt
@@ -14,7 +15,7 @@ from neuralframe.chunking.store import ChunkStore
 from neuralframe.colorspace import ColorPlan, ColorRange
 from neuralframe.core.runtime import CancelToken, Frame, Stage, StageQueue
 from neuralframe.errors import ErrorCode, NeuralFrameError
-from neuralframe.inference.processor import FrameProcessor
+from neuralframe.inference.processor import BatchProcessor
 from neuralframe.io.decoder import DecodedFrame
 from neuralframe.io.encoder import SegmentEncoder
 from neuralframe.io.rawvideo import RawArray, RawVideoFormat
@@ -95,21 +96,25 @@ class PreprocessStage(Stage):
 
 
 class ProcessStage(Stage):
-    """Runs the frame processor (the super-resolution model) on batches of frames."""
+    """Runs the frame processor (the super-resolution model) on batches of frames.
+
+    In host mode items are float RGB frames; in device mode they are raw YUV buffers and the processor does
+    colour conversion, inference and resizing on the GPU.
+    """
 
     def __init__(
         self,
         cancel: CancelToken,
-        inq: StageQueue[Frame[F32]],
-        out: StageQueue[Frame[F32]],
+        inq: StageQueue[Frame[Any]],
+        out: StageQueue[Frame[Any]],
         *,
-        processor: FrameProcessor,
+        processor: BatchProcessor,
     ) -> None:
         super().__init__("inference", cancel)
         self._in, self._out = inq, out
         self.processor = processor
 
-    def _flush(self, batch: list[Frame[F32]]) -> None:
+    def _flush(self, batch: list[Frame[Any]]) -> None:
         with self.timed():
             outputs = self.processor.process([f.data for f in batch])
         if len(outputs) != len(batch):
@@ -121,7 +126,7 @@ class ProcessStage(Stage):
         self.metrics.frames += len(batch)
 
     def run(self) -> None:
-        batch: list[Frame[F32]] = []
+        batch: list[Frame[Any]] = []
         while (frame := self._in.get()) is not None:
             batch.append(frame)
             if len(batch) >= max(1, self.processor.batch_size):

@@ -129,6 +129,18 @@ desktop GUI application.
   `progressive` container tag and only runs `idet` when the field order is unknown.
 - YAML 1.1 reads unquoted `on`/`off` as booleans; option validators map them back.
 
+### Findings from Milestone 2
+
+- PyTorch eager FP16 baselines on the RTX 4060 Laptop (8 GB), deterministic cuDNN: Real-ESRGAN x4plus
+  0.25 Mpx/s (≈0.6 fps at 480p, 8.8 KB VRAM per input pixel), x2plus 1.2 Mpx/s (2.2 KB/px),
+  animevideov3 7.7 Mpx/s (≈19 fps at 480p, 0.55 KB/px). Reference case 480p→1080p with x4plus:
+  300 frames in 505 s, GPU utilisation 99.5 %, peak VRAM 5.4 GB → inference-bound as intended.
+- Device mode (torch ops for colour/resize on the GPU) is the default whenever torch is installed and a
+  neural model or CUDA is used; host mode (CPU stages) is kept for CPU-only/classical runs and is
+  pixel-equivalent within 1 LSB.
+- FFmpeg applies JPEG EXIF orientation through *frame* side data, invisible in stream-level probe output;
+  the probe reads the first frame's display matrix for still images.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -151,15 +163,15 @@ desktop GUI application.
       bit-exact audio packets, A/V sync within one frame, colour tags)
 
 ### M2 — Inference core
-- [ ] `models/registry.yaml` + loader, download with SHA256 verification, licence warnings
-- [ ] Architectures in plain PyTorch: RRDBNet (x4plus, x2plus), SRVGGNetCompact (animevideov3)
-- [ ] `InferenceBackend` ABC + TorchBackend (FP16 on CUDA, FP32 on CPU)
-- [ ] Spatial tiling: fixed-size tile layout, feathered weights, NumPy reference split/merge
-- [ ] `FrameUpscaler`: tiling + cross-frame batching + backend + padding to model multiples
-- [ ] Pipeline integration (GPU device ops for colour/resize when on CUDA)
-- [ ] Image upscaling path (`neuralframe upscale photo.png -o photo_4k.png`), 8/16-bit, alpha kept via
+- [x] `models/registry.yaml` + loader, download with SHA256 verification, licence warnings
+- [x] Architectures in plain PyTorch: RRDBNet (x4plus, x2plus), SRVGGNetCompact (animevideov3)
+- [x] `InferenceBackend` ABC + TorchBackend (FP16 on CUDA, FP32 on CPU)
+- [x] Spatial tiling: fixed-size tile layout, feathered weights, NumPy reference split/merge
+- [x] `FrameUpscaler`: tiling + cross-frame batching + backend + padding to model multiples
+- [x] Pipeline integration (GPU device ops for colour/resize when on CUDA)
+- [x] Image upscaling path (`neuralframe upscale photo.png -o photo_4k.png`), 8/16-bit, alpha kept via
       Lanczos-resized alpha plane; cascaded passes for factors beyond the model's native scale
-- [ ] Tests: tile layout/merge (no-seam test vs whole-frame), tiny random model E2E on CPU, image E2E
+- [x] Tests: tile layout/merge (no-seam test vs whole-frame), tiny random model E2E on CPU, image E2E
 
 ### M3 — Native module
 - [ ] C++17 ops: YUV↔RGB, Lanczos resize, feather tile merge, temporal blend, pinned ring buffer

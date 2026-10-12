@@ -55,7 +55,12 @@ def test_reference_like_clip_mp4_to_mkv(
     assert [c.title for c in media.chapters] == ["Part one", "Part two"]
 
     stage_names = [s["name"] for s in report["throughput"]["stages"]]
-    assert stage_names == ["decode", "preprocess", "inference", "postprocess", "encode"]
+    if report["plan"]["mode"] == "device":  # colour conversion + resize run inside the GPU stage
+        assert stage_names == ["decode", "inference", "encode"]
+        assert [s["name"] for s in report["throughput"]["device_substages"]] == [
+            "preprocess", "inference", "postprocess"]
+    else:
+        assert stage_names == ["decode", "preprocess", "inference", "postprocess", "encode"]
     assert json.loads(out.with_name("out.report.json").read_text())["job_id"] == report["job_id"]
 
 

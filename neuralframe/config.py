@@ -129,6 +129,10 @@ class ChunkingConfig(_Section):
 
 
 class PipelineConfig(_Section):
+    # device: colour conversion, model and resize run in torch on the GPU (or CPU) inside the inference
+    # stage; host: separate CPU stages using the native/NumPy ops. auto = device when torch is installed
+    # and a neural model is used or a CUDA GPU is available.
+    mode: Literal["auto", "device", "host"] = "auto"
     ops: Literal["auto", "native", "numpy"] = "auto"
     ram_budget_gb: float | None = Field(default=None, gt=0)
     keep_work_dir: bool = False
@@ -137,6 +141,7 @@ class PipelineConfig(_Section):
 
 class InferenceConfig(_Section):
     backend: Literal["auto", "tensorrt", "torch", "onnxruntime"] = "auto"
+    device: Literal["auto", "cuda", "cpu"] = "auto"
     precision: Literal["fp16", "fp32"] = "fp16"
     tile_size: int | None = Field(default=None, ge=32)
     tile_overlap: int | None = Field(default=None, ge=0)

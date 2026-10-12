@@ -27,6 +27,7 @@ dependencies = [
   "structlog>=24.1",
   "nvidia-ml-py>=12.535",
   "psutil>=5.9",
+  "pillow>=10",
   "httpx>=0.27",
   "sqlalchemy>=2.0",
   "fastapi>=0.110",
@@ -132,6 +133,11 @@ module = [
   "neuralframe.monitoring",
 ]
 strict = true
+
+[[tool.mypy.overrides]]
+# nn.Module.__call__ is typed as returning Any; the network definitions mirror upstream code 1:1.
+module = ["neuralframe.inference.archs.*"]
+warn_return_any = false
 
 [[tool.mypy.overrides]]
 module = ["av.*", "tensorrt.*", "pynvml.*", "onnxruntime.*", "onnx.*", "lpips.*", "torchvision.*"]
