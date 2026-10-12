@@ -52,6 +52,8 @@ class InferenceBackend(ABC):
     name: ClassVar[str] = "backend"
 
     def __init__(self, device: torch.device, precision: str = "fp16") -> None:
+        if device.type == "cuda" and device.index is None:
+            device = torch.device("cuda", torch.cuda.current_device())
         self.device = device
         self.precision = "fp32" if device.type == "cpu" else precision
         self.model: ModelSpec | None = None

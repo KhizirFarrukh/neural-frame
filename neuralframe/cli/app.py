@@ -435,6 +435,62 @@ def models_verify(ctx: typer.Context) -> None:
         raise typer.Exit(1)
 
 
+@models_app.command("export")
+def models_export(
+    ctx: typer.Context,
+    model_id: str = typer.Argument(..., help="Model id to export."),
+    check: bool = typer.Option(True, "--check/--no-check", help="Numeric parity check after export."),
+    tensorrt: bool = typer.Option(False, "--tensorrt", help="Also build a TensorRT engine and compare it."),
+    size: int = typer.Option(128, "--size", help="Tile edge used for the parity check."),
+) -> None:
+    """Export a model to ONNX (opset 17, dynamic batch/H/W) and verify it against PyTorch."""
+    import torch
+
+    from neuralframe.inference.backend import ShapeProfile
+    from neuralframe.inference.factory import create_backend
+    from neuralframe.models.download import ensure_weights
+    from neuralframe.models.export import compare_outputs, export_onnx, onnx_path, sample_tiles
+    from neuralframe.models.registry import ModelRegistry
+
+    settings = _state(ctx).settings
+    try:
+        spec = ModelRegistry.load().get(model_id)
+        weights = ensure_weights(spec, settings.paths.models())
+        path = export_onnx(spec, weights, onnx_path(spec, settings.paths.models()))
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]exported[/] {path}")
+    if not check:
+        return
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    tiles = sample_tiles(4, size, size).to(device)
+    profile = ShapeProfile.fixed(size, size, 4)
+    candidates = ["onnxruntime"] + (["tensorrt"] if tensorrt and device.type == "cuda" else [])
+    reference = create_backend("torch", device, "fp32", deterministic=True)
+    reference.load(spec, weights, profile)
+    ref_out = reference.infer(tiles).float()
+    reference.close()
+    table = Table(title=f"Parity vs PyTorch FP32 ({size}x{size} tiles, {device})", title_justify="left")
+    for col in ("backend", "precision", "max |diff|", "mean |diff|", "PSNR (dB)"):
+        table.add_column(col)
+    for name in candidates:
+        precision = "fp16" if name == "tensorrt" else "fp32"
+        backend = create_backend(name, device, precision, deterministic=True, models_dir=settings.paths.models(),
+                                 engines_dir=settings.paths.engines(), onnx_providers=settings.inference.onnx_providers)
+        try:
+            backend.load(spec, weights, profile)
+            out = backend.infer(tiles).float()
+        except NeuralFrameError as exc:
+            table.add_row(name, precision, "-", "-", f"[red]{exc.message[:40]}[/]")
+            continue
+        finally:
+            backend.close()
+        mx, mean, psnr = compare_outputs(ref_out, out)
+        table.add_row(name, precision, f"{mx:.5f}", f"{mean:.6f}", f"{psnr:.1f}")
+    console.print(table)
+
+
 def main() -> None:
     try:
         app()

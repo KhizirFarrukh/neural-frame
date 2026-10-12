@@ -310,3 +310,28 @@ class SegmentEncoder:
             f"{message}; ffmpeg: {stderr}" if stderr else message,
             details={"encoder": self.plan.name, "output": str(self.out_path)},
         )
+
+
+def preflight(
+    tools: FFmpegTools, plan: EncoderPlan, fmt: RawVideoFormat, time_base: Fraction, frame_rate: Fraction,
+    work_dir: Path,
+) -> str | None:
+    """Encode two frames with the real settings and output size; return None on success, else the error.
+
+    Catches failures that capability probes at 320x240 cannot (size limits, session limits, profiles)
+    before the pipeline starts, so the job can switch encoders instead of failing mid-way.
+    """
+    out = work_dir / f"preflight-{plan.name}.mp4"
+    blank = np.zeros(fmt.frame_samples, dtype=fmt.dtype)
+    blank[: fmt.width * fmt.height] = 16 << (fmt.bit_depth - 8)
+    blank[fmt.width * fmt.height :] = 128 << (fmt.bit_depth - 8)
+    step = max(1, round(1 / (frame_rate * time_base))) if frame_rate > 0 else 1
+    try:
+        with SegmentEncoder(tools, out, fmt, time_base, frame_rate, plan) as enc:
+            for i in range(2):
+                enc.write(i * step, step, blank)
+    except NeuralFrameError as exc:
+        return exc.message
+    finally:
+        out.unlink(missing_ok=True)
+    return None

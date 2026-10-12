@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from functools import lru_cache
 
+import numpy as np
 import torch
 import torch.nn.functional as F
 
@@ -181,14 +182,42 @@ def resample_matrix(in_size: int, out_size: int, kernel: str, device: torch.devi
     return mat.to(device)
 
 
+Band = tuple[int, int, int, int, torch.Tensor]
+
+
+@lru_cache(maxsize=32)
+def resample_bands(in_size: int, out_size: int, kernel: str, device: torch.device, block: int = 256) -> list[Band]:
+    """The resampling matrix cut into ``(o0, o1, i0, i1, sub-matrix)`` bands.
+
+    Lanczos/bicubic weights are banded (≈2·support·scale taps per row), so multiplying each block of
+    output samples only by its input window does ~in/(taps) times less work than the dense product
+    (≈7x for a 3416→1920 downscale) with exactly the same weights.
+    """
+    idx, _ = reference.resample_weights(in_size, out_size, kernel)
+    mat = resample_matrix(in_size, out_size, kernel, device)
+    bands: list[Band] = []
+    for o0 in range(0, out_size, block):
+        o1 = min(o0 + block, out_size)
+        rows = idx[o0:o1]
+        i0, i1 = int(np.min(rows)), int(np.max(rows)) + 1
+        bands.append((o0, o1, i0, i1, mat[o0:o1, i0:i1].contiguous()))
+    return bands
+
+
 def resize(img: torch.Tensor, out_h: int, out_w: int, kernel: str = "lanczos3") -> torch.Tensor:
     """Resize ``(N, C, H, W)`` float tensors; horizontal pass first, then vertical (like the reference)."""
     h, w = img.shape[-2:]
     out = img.float()
     if w != out_w:
-        out = out @ resample_matrix(w, out_w, kernel, img.device).T
+        wide = out.new_empty((*out.shape[:-1], out_w))
+        for o0, o1, i0, i1, m in resample_bands(w, out_w, kernel, img.device):
+            wide[..., o0:o1] = out[..., i0:i1] @ m.T
+        out = wide
     if h != out_h:
-        out = resample_matrix(h, out_h, kernel, img.device) @ out
+        tall = out.new_empty((*out.shape[:-2], out_h, out.shape[-1]))
+        for o0, o1, i0, i1, m in resample_bands(h, out_h, kernel, img.device):
+            tall[..., o0:o1, :] = m @ out[..., i0:i1, :]
+        out = tall
     return out
 
 

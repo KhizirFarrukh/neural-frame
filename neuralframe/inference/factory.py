@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import importlib.util
+from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import torch
 
@@ -74,23 +76,50 @@ def available_backends() -> list[str]:
 
 
 def resolve_backend_name(requested: str, device: torch.device) -> str:
-    implemented = {"torch"}
+    """auto: TensorRT on CUDA when installed, ONNX Runtime on CPU when installed, otherwise PyTorch."""
+    available = available_backends()
     if requested == "auto":
+        if device.type == "cuda" and "tensorrt" in available:
+            return "tensorrt"
+        if device.type == "cpu" and "onnxruntime" in available:
+            return "onnxruntime"
         return "torch"
-    if requested not in implemented:
+    if requested not in available:
         raise NeuralFrameError(
             ErrorCode.BACKEND_UNAVAILABLE,
-            f"backend {requested!r} is not available in this build",
-            hint=f"available: {', '.join(sorted(implemented))}",
+            f"backend {requested!r} is not available here",
+            hint=f"available: {', '.join(available)}",
         )
+    if requested == "tensorrt" and device.type != "cuda":
+        raise NeuralFrameError(ErrorCode.BACKEND_UNAVAILABLE, "TensorRT needs a CUDA GPU")
     return requested
 
 
-def create_backend(name: str, device: torch.device, precision: str, *, deterministic: bool) -> InferenceBackend:
+def create_backend(
+    name: str,
+    device: torch.device,
+    precision: str,
+    *,
+    deterministic: bool,
+    models_dir: Path | None = None,
+    engines_dir: Path | None = None,
+    onnx_providers: list[str] | None = None,
+    status: Callable[[str], None] | None = None,
+) -> InferenceBackend:
     if name == "torch":
         from neuralframe.inference.torch_backend import TorchBackend
 
         return TorchBackend(device, precision, deterministic=deterministic)
+    if name == "tensorrt":
+        from neuralframe.inference.tensorrt_backend import TensorRTBackend
+
+        assert models_dir is not None and engines_dir is not None
+        return TensorRTBackend(device, precision, models_dir=models_dir, engines_dir=engines_dir, status=status)
+    if name == "onnxruntime":
+        from neuralframe.inference.onnx_backend import OnnxRuntimeBackend
+
+        assert models_dir is not None
+        return OnnxRuntimeBackend(device, precision, models_dir=models_dir, providers=onnx_providers)
     raise NeuralFrameError(ErrorCode.BACKEND_UNAVAILABLE, f"unknown backend {name!r}")
 
 

@@ -6,6 +6,7 @@ import dataclasses
 import hashlib
 import importlib.util
 import json
+import tempfile
 import time
 import uuid
 from collections.abc import Callable
@@ -31,8 +32,8 @@ from neuralframe.core.runtime import CancelToken, StageQueue, StageRunner
 from neuralframe.core.stages import DecodeStage, EncodeStage, PostprocessStage, PreprocessStage, ProcessStage
 from neuralframe.errors import ErrorCode, JobCancelled, NeuralFrameError
 from neuralframe.inference.processor import BatchProcessor, IdentityProcessor
-from neuralframe.io.decoder import DecodePlan, FrameDecoder
-from neuralframe.io.encoder import EncoderPlan, SegmentEncoder, default_quality
+from neuralframe.io.decoder import DecodePlan, ResilientDecoder
+from neuralframe.io.encoder import EncoderPlan, SegmentEncoder, default_quality, preflight
 from neuralframe.io.ffmpeg import FFmpegTools, locate_ffmpeg
 from neuralframe.io.hwcaps import Capabilities, detect_capabilities
 from neuralframe.io.media import FrameTimeline, MediaInfo
@@ -258,6 +259,8 @@ class JobRunner:
         self._queues: dict[str, StageQueue[Any]] = {}
         self._sampler: ResourceSampler | None = None
         self._pipeline_t0: float | None = None
+        self._fallbacks: list[str] = []
+        self._decoder: ResilientDecoder | None = None
 
     # ---- progress ------------------------------------------------------------------------------------
 
@@ -357,20 +360,41 @@ class JobRunner:
             quality = settings.encode.quality
         if quality is None:
             quality = preset.quality.get(codec, default_quality(codec))
-        encoder = plan_encoder(
-            caps,
-            codec=codec,
-            encoder=spec.encoder or settings.encode.encoder,
-            quality=quality,
-            speed=spec.speed or settings.encode.speed or preset.speed or "medium",
-            ten_bit=ten_bit,
-            color=color,
-            out_width=geometry.out_width,
-            out_height=geometry.out_height,
-            extra_args=tuple(settings.encode.extra_args),
-        )
+        requested_encoder = spec.encoder or settings.encode.encoder
+        excluded: set[str] = set()
+        while True:
+            encoder = plan_encoder(
+                caps,
+                codec=codec,
+                encoder=requested_encoder,
+                quality=quality,
+                speed=spec.speed or settings.encode.speed or preset.speed or "medium",
+                ten_bit=ten_bit,
+                color=color,
+                out_width=geometry.out_width,
+                out_height=geometry.out_height,
+                extra_args=tuple(settings.encode.extra_args),
+                exclude=frozenset(excluded),
+            )
+            out_fmt = RawVideoFormat.yuv420(
+                geometry.out_width, geometry.out_height, 10 if encoder.ten_bit else 8
+            )
+            # Preflight with the real size/settings: hardware encoders can still fail at this point
+            # (resolution limits, exhausted NVENC sessions) even though the capability probe passed.
+            with tempfile.TemporaryDirectory(prefix="nf-preflight-") as tmp:
+                problem = preflight(
+                    tools, encoder, out_fmt, timeline.time_base, video.fps, Path(tmp)
+                )
+            if problem is None:
+                break
+            if requested_encoder != "auto":
+                raise NeuralFrameError(
+                    ErrorCode.ENCODE_FAILED, f"encoder {encoder.name} failed its preflight: {problem}"
+                )
+            log.warning("encoder preflight failed, trying the next one", encoder=encoder.name, error=problem)
+            notes.append(f"{encoder.name} failed preflight ({problem[:120]}); falling back")
+            excluded.add(encoder.name)
         notes += list(encoder.notes)
-        out_fmt = RawVideoFormat.yuv420(geometry.out_width, geometry.out_height, 10 if encoder.ten_bit else 8)
 
         mux = plan_mux(media, spec.output)
         notes += list(mux.warnings)
@@ -505,19 +529,56 @@ class JobRunner:
         """Create and load the backend, wrapped in a tiling/batching :class:`ModelRunner`."""
         import torch
 
-        from neuralframe.inference.backend import ShapeProfile
         from neuralframe.inference.factory import create_backend
         from neuralframe.inference.runner import ModelRunner
 
         assert weights is not None
-        backend = create_backend(
-            inf.backend, torch.device(inf.device), inf.precision,
-            deterministic=self.settings.inference.deterministic,
-        )
-        tile_h = inf.tile or geometry.decoded_height
-        tile_w = inf.tile or geometry.decoded_width
-        backend.load(model, weights, ShapeProfile.fixed(tile_h, tile_w, inf.batch))
+        settings = self.settings
+        profile = self._shape_profile(model, inf, geometry)
+
+        def make(name: str) -> Any:
+            backend = create_backend(
+                name, torch.device(inf.device), inf.precision,
+                deterministic=settings.inference.deterministic,
+                models_dir=settings.paths.models(), engines_dir=settings.paths.engines(),
+                onnx_providers=settings.inference.onnx_providers,
+                status=lambda msg: self._emit("planning", msg),
+            )
+            backend.load(model, weights, profile)
+            return backend
+
+        try:
+            backend = make(inf.backend)
+        except NeuralFrameError as exc:
+            requested = self.settings.inference.backend
+            if requested != "auto" or inf.backend == "torch" or exc.code not in (
+                ErrorCode.ENGINE_BUILD_FAILED, ErrorCode.BACKEND_UNAVAILABLE
+            ):
+                raise
+            log.warning("backend unavailable, falling back to torch", backend=inf.backend, error=str(exc))
+            self._fallbacks.append(f"{inf.backend} failed ({exc.message}); fell back to torch")
+            backend = make("torch")
         return ModelRunner(backend, model, tile=inf.tile, overlap=inf.overlap, batch=inf.batch)
+
+    @staticmethod
+    def _shape_profile(model: ModelSpec, inf: InferencePlan, geometry: Geometry) -> Any:
+        """Optimisation profile covering every tile/frame shape the runner will submit (all passes)."""
+        from neuralframe.chunking.tiling import TileLayout
+        from neuralframe.inference.backend import ShapeProfile
+
+        m = max(model.pad_multiple, 1)
+        shapes = []
+        h, w = geometry.decoded_height, geometry.decoded_width
+        for _ in range(max(geometry.model_passes, 1)):
+            hp, wp = -(-h // m) * m, -(-w // m) * m
+            tile = None if inf.tile is None else max(m, inf.tile - inf.tile % m)
+            layout = TileLayout.plan(hp, wp, tile, inf.overlap)
+            shapes.append((layout.tile_h, layout.tile_w))
+            h, w = h * model.scale, w * model.scale
+        opt = shapes[0]
+        max_hw = (max(s[0] for s in shapes), max(s[1] for s in shapes))
+        min_hw = (min(s[0] for s in shapes), min(s[1] for s in shapes))
+        return ShapeProfile(min_hw=min_hw, opt_hw=opt, max_hw=max_hw, max_batch=inf.batch, opt_batch=inf.batch)
 
     def create_processor(self, plan: JobPlan) -> BatchProcessor:
         """Host mode: FrameProcessor on float RGB; device mode: DeviceProcessor on raw YUV."""
@@ -636,6 +697,7 @@ class JobRunner:
             else:
                 store.set_meta(inference=plan.inference.summary())
         processor = self.create_processor(plan)
+        warnings += self._fallbacks
         done_ids = set(store.completed())
         if done_ids:
             log.info("resuming", completed_chunks=sorted(done_ids))
@@ -654,6 +716,8 @@ class JobRunner:
             processor_stats = processor.stats()
             processor.close()
         self._timed("pipeline_s", t)
+        if self._decoder is not None:
+            warnings += self._decoder.fallbacks
 
         self._emit("muxing")
         t = time.perf_counter()
@@ -702,10 +766,11 @@ class JobRunner:
         while first_index < plan.total_frames and skip(first_index):
             first_index = plan.chunks.chunk_of(first_index).end
 
-        decoder = FrameDecoder(
+        decoder = ResilientDecoder(
             tools, plan.spec.input, plan.media.require_video().index, plan.decode,
             loglevel=settings.ffmpeg.loglevel,
         ).start()
+        self._decoder = decoder
 
         def make_encoder(path: Path) -> SegmentEncoder:
             return SegmentEncoder(
@@ -722,7 +787,34 @@ class JobRunner:
             "first_index": first_index, "done_chunks": done_ids,
         }
         stages: list[Any]
-        if plan.mode == "device":
+        use_streams = (
+            plan.mode == "device" and settings.pipeline.cuda_streams
+            and getattr(processor, "device", None) is not None and processor.device.type == "cuda"  # type: ignore[attr-defined]
+        )
+        if use_streams:
+            # decode -> upload (H2D + yuv->rgb) -> inference -> download (resize + rgb->yuv + D2H) -> encode,
+            # each GPU stage on its own CUDA stream so neighbouring batches overlap.
+            from neuralframe.inference.device import DeviceProcessor
+            from neuralframe.inference.gpu_stages import DownloadStage, InferStage, UploadStage
+
+            assert isinstance(processor, DeviceProcessor)
+            q_upload: StageQueue[Any] = StageQueue("upload", sizes["inference"], cancel)
+            q_inf: StageQueue[Any] = StageQueue("inference", 2, cancel)
+            q_dl: StageQueue[Any] = StageQueue("postprocess", 2, cancel)
+            q_enc: StageQueue[Any] = StageQueue("encode", sizes["encode"], cancel)
+            self._queues = {q.name: q for q in (q_upload, q_inf, q_dl, q_enc)}
+            fpc = processor.batch_size
+            stages = [
+                DecodeStage(cancel, decoder.frames(), q_upload, skip=skip_decoded),
+                UploadStage(cancel, q_upload, q_inf, device=processor.device, fmt=plan.decode.fmt,
+                            color=plan.encoder.color, frames_per_call=fpc),
+                InferStage(cancel, q_inf, q_dl, device=processor.device, runner=processor.runner,
+                           passes=processor.passes),
+                DownloadStage(cancel, q_dl, q_enc, device=processor.device, fmt=plan.out_fmt,
+                              color=plan.encoder.color, kernel=plan.resize_kernel, frames_per_call=fpc),
+                EncodeStage(cancel, q_enc, **encode_stage_args),
+            ]
+        elif plan.mode == "device":
             # decode -> [GPU: yuv->rgb, model, resize, rgb->yuv] -> encode
             q_in: StageQueue[Any] = StageQueue("inference", sizes["inference"], cancel)
             q_done: StageQueue[Any] = StageQueue("encode", sizes["encode"], cancel)

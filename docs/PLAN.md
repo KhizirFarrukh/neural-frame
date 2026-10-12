@@ -141,6 +141,19 @@ desktop GUI application.
 - FFmpeg applies JPEG EXIF orientation through *frame* side data, invisible in stream-level probe output;
   the probe reads the first frame's display matrix for still images.
 
+### Findings from Milestone 4
+
+- TensorRT 10.16 FP16 vs PyTorch eager FP16 (cuDNN benchmark), 480×856 whole frames, RTX 4060 Laptop:
+  animevideov3 52.8 → 39.8 ms (1.3×), x2plus 344 → 159 ms (2.2×), x4plus 1550 → 590 ms (2.6×);
+  parity vs Torch 58–70 dB PSNR. One-time engine builds: 71 s / 122 s / 203 s (cached afterwards).
+- Dense-matrix resizing wasted ~7× FLOPs on banded Lanczos weights; banded block matmuls are 4.8×
+  faster (87.8 → 18.3 ms per 8 frames at 3416×1920 → 1080p) with identical output.
+- CUDA-stream overlap (upload / inference / download stages, pinned ring-buffer staging): 25.5 → 28.7 fps
+  before the resize fix; after it 34.5 → 35.5 fps (GPU already ~82 % busy). animevideov3 480p → 1080p now
+  runs faster than real time (29.97 fps source).
+- Hardware encoders can pass a 320×240 capability probe yet fail on the real job (size/session limits),
+  so planning runs a 2-frame preflight with the real settings before the fingerprint is fixed.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -181,14 +194,14 @@ desktop GUI application.
 - [x] GoogleTest C++ tests via CTest (14 tests)
 - [x] Parity tests native vs NumPy: **bit-identical** (stricter than the ≤ 1 LSB requirement); speed-up
       19–34× per op, Lanczos 1080p pipeline 2.9 → 45 fps in host mode (`benchmarks/results/ops-*.md`)
-- [ ] Ring buffer wired into decode → GPU upload (moved to M4 together with CUDA-stream overlap)
+- [x] Ring buffer wired into the GPU upload/download stages as page-locked staging (M4)
 
 ### M4 — TensorRT + hardware I/O
-- [ ] ONNX export (opset ≥ 17, dynamic batch/H/W) + parity check (max abs diff, PSNR)
-- [ ] OnnxRuntimeBackend (CUDA/TRT/DirectML/ROCm/CPU EPs)
-- [ ] TensorRTBackend: FP16 builder, dynamic profiles, engine cache + invalidation, timing cache
-- [ ] NVDEC/NVENC (and AMF/QSV/VAAPI) paths with automatic software fallback
-- [ ] CUDA-stream overlap (upload / compute / download) with measured before/after
+- [x] ONNX export (opset ≥ 17, dynamic batch/H/W) + parity check (max abs diff, PSNR)
+- [x] OnnxRuntimeBackend (CUDA/TRT/DirectML/ROCm/CPU EPs)
+- [x] TensorRTBackend: FP16 builder, dynamic profiles, engine cache + invalidation, timing cache
+- [x] NVDEC/NVENC (and AMF/QSV/VAAPI) paths with automatic software fallback
+- [x] CUDA-stream overlap (upload / compute / download) with measured before/after
 
 ### M5 — Chunking, VRAM manager, resume
 - [ ] Scene detection (scdet / histogram) + chunk planner (pts ranges, scene alignment, overlap)

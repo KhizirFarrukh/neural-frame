@@ -135,6 +135,11 @@ module = [
 strict = true
 
 [[tool.mypy.overrides]]
+# torch.cuda.Stream/Event/cudart carry no type annotations.
+module = ["neuralframe.inference.gpu_stages"]
+disallow_untyped_calls = false
+
+[[tool.mypy.overrides]]
 # nn.Module.__call__ is typed as returning Any; the network definitions mirror upstream code 1:1.
 module = ["neuralframe.inference.archs.*"]
 warn_return_any = false

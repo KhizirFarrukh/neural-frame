@@ -164,7 +164,7 @@ def run_image_job(runner: JobRunner, spec: JobSpec, tools: FFmpegTools, media: M
                  "inference": inference.summary() if inference else None, "notes": notes},
         "timings": {"inference_s": round(infer_s, 3), "total_s": round(total, 3)},
         "processor": stats,
-        "warnings": notes,
+        "warnings": notes + runner._fallbacks,
     }
     report_path = spec.output.with_name(spec.output.stem + ".report.json")
     report_path.write_text(json.dumps(report, indent=2, default=str), encoding="utf-8")

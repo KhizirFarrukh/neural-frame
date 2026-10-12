@@ -55,7 +55,9 @@ def test_reference_like_clip_mp4_to_mkv(
     assert [c.title for c in media.chapters] == ["Part one", "Part two"]
 
     stage_names = [s["name"] for s in report["throughput"]["stages"]]
-    if report["plan"]["mode"] == "device":  # colour conversion + resize run inside the GPU stage
+    if report["plan"]["mode"] == "device" and "upload" in stage_names:  # CUDA-stream overlap
+        assert stage_names == ["decode", "upload", "inference", "postprocess", "encode"]
+    elif report["plan"]["mode"] == "device":  # colour conversion + resize run inside the GPU stage
         assert stage_names == ["decode", "inference", "encode"]
         assert [s["name"] for s in report["throughput"]["device_substages"]] == [
             "preprocess", "inference", "postprocess"]

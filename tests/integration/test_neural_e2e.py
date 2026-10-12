@@ -139,3 +139,22 @@ def test_real_anime_model_on_cuda(
     ).report
     assert report["sync"]["ok"]
     assert (probe(out, tools).require_video().height) == 720
+
+
+@pytest.mark.gpu
+def test_cuda_stream_overlap_is_pixel_identical(
+    caps: Capabilities, settings: Settings, tiny_registry: Any, clip: ClipFactory, tmp_path: Path, ffhelpers: Any
+) -> None:
+    src = clip("nn-streams", duration=1.0, subtitles=True)
+    common: dict[str, Any] = {"input": src, "model": "tiny-srvgg-x2", "target": TargetSpec.for_height(180),
+                              "encoder": "libx264", "codec": "h264", "quality": 0, "batch_size": 3}
+    outputs = {}
+    for streams in (False, True):
+        settings.pipeline.cuda_streams = streams
+        out = tmp_path / f"streams-{streams}.mkv"
+        report = _run(settings, caps, tiny_registry, output=out, **common)
+        names = [s["name"] for s in report["throughput"]["stages"]]
+        assert ("upload" in names) is streams
+        assert report["sync"]["ok"]
+        outputs[streams] = ffhelpers.frame_md5s(out)
+    assert outputs[True] == outputs[False]

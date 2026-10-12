@@ -133,6 +133,9 @@ class PipelineConfig(_Section):
     # stage; host: separate CPU stages using the native/NumPy ops. auto = device when torch is installed
     # and a neural model is used or a CUDA GPU is available.
     mode: Literal["auto", "device", "host"] = "auto"
+    # Device mode on CUDA: split the GPU work into upload / inference / download stages, each with its own
+    # thread and CUDA stream, so transfers and colour/resize work overlap with the network.
+    cuda_streams: bool = True
     ops: Literal["auto", "native", "numpy"] = "auto"
     ram_budget_gb: float | None = Field(default=None, gt=0)
     keep_work_dir: bool = False

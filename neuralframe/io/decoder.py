@@ -219,3 +219,85 @@ class FrameDecoder:
         rc = proc.wait()
         if rc != 0:
             self._fail(f"ffmpeg decoder exited with code {rc} after {self.frames_read} frames")
+
+
+class ResilientDecoder:
+    """Hardware decoding with transparent software fallback.
+
+    If the hardware path fails (unsupported profile, driver hiccup, device lost) — even mid-stream — a
+    software decoder is started, seeked to a keyframe shortly before the last delivered frame, and frames
+    are skipped by exact PTS, so downstream stages see one continuous, gap-free sequence.
+    """
+
+    def __init__(
+        self,
+        tools: FFmpegTools,
+        path: Path,
+        stream_index: int,
+        plan: DecodePlan,
+        *,
+        loglevel: str = "error",
+        seek_margin_s: float = 5.0,
+    ) -> None:
+        self.tools = tools
+        self.path = path
+        self.stream_index = stream_index
+        self.plan = plan
+        self.loglevel = loglevel
+        self.seek_margin_s = seek_margin_s
+        self.fallbacks: list[str] = []
+        self._current = FrameDecoder(tools, path, stream_index, plan, loglevel=loglevel)
+
+    @property
+    def time_base(self) -> Fraction:
+        return self._current.time_base
+
+    @property
+    def frame_rate(self) -> Fraction:
+        return self._current.frame_rate
+
+    def start(self) -> ResilientDecoder:
+        try:
+            self._current.start()
+        except NeuralFrameError as exc:
+            if self.plan.hwaccel is None:
+                raise
+            self._switch_to_software(str(exc), seek_seconds=None)
+            self._current.start()
+        return self
+
+    def _switch_to_software(self, reason: str, seek_seconds: float | None) -> None:
+        log.warning("hardware decoding failed; continuing in software", hwaccel=self.plan.hwaccel, error=reason)
+        self.fallbacks.append(f"hardware decode ({self.plan.hwaccel}) failed: {reason[:160]}; using software")
+        self._current.close()
+        self.plan = DecodePlan(fmt=self.plan.fmt, hwaccel=None, filters=self.plan.filters, notes=self.plan.notes)
+        self._current = FrameDecoder(
+            self.tools, self.path, self.stream_index, self.plan, seek_seconds=seek_seconds, loglevel=self.loglevel
+        )
+
+    def frames(self) -> Iterator[DecodedFrame]:
+        delivered = 0
+        last_time: Fraction | None = None
+        time_base = self._current.time_base
+        while True:
+            try:
+                for frame in self._current.frames():
+                    t = frame.pts * self._current.time_base
+                    if last_time is not None and t <= last_time:
+                        continue  # already delivered before the fallback
+                    last_time = t
+                    pts = frame.pts
+                    if self._current.time_base != time_base:
+                        pts = round(t / time_base)
+                    yield DecodedFrame(index=delivered, pts=pts, duration=frame.duration, data=frame.data)
+                    delivered += 1
+                return
+            except NeuralFrameError as exc:
+                if self.plan.hwaccel is None:
+                    raise
+                seek = None if last_time is None else max(0.0, float(last_time) - self.seek_margin_s)
+                self._switch_to_software(str(exc), seek_seconds=seek)
+                self._current.start()
+
+    def close(self) -> None:
+        self._current.close()

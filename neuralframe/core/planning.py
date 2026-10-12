@@ -439,6 +439,7 @@ def plan_encoder(
     out_width: int,
     out_height: int,
     extra_args: tuple[str, ...] = (),
+    exclude: frozenset[str] = frozenset(),
 ) -> EncoderPlan:
     notes: list[str] = []
     ten = ten_bit or color.out_bit_depth == 10
@@ -447,7 +448,9 @@ def plan_encoder(
         return max(out_width, out_height) <= _MAX_WIDTH.get(name, 16384)
 
     if encoder == "auto":
-        candidates = [e for e in caps.functional_encoders() if e.codec == codec and fits(e.name)]
+        candidates = [
+            e for e in caps.functional_encoders() if e.codec == codec and fits(e.name) and e.name not in exclude
+        ]
         if not candidates:
             raise NeuralFrameError(
                 ErrorCode.ENCODE_FAILED,
