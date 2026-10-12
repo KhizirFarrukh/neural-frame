@@ -1,0 +1,117 @@
+# ---------------------------------------------------------------------------
+# Python
+# ---------------------------------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.egg-info/
+*.egg
+.eggs/
+build/
+dist/
+wheels/
+pip-wheel-metadata/
+.venv/
+venv/
+env/
+.python-version
+
+# Tooling caches
+.mypy_cache/
+.dmypy.json
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+.benchmarks/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+
+# ---------------------------------------------------------------------------
+# Native / CMake build artefacts
+# ---------------------------------------------------------------------------
+_skbuild/
+out/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+CMakeUserPresets.json
+compile_commands.json
+*.pyd
+*.so
+*.dylib
+*.dll
+*.lib
+*.exp
+*.pdb
+*.ilk
+*.obj
+*.o
+*.a
+
+# ---------------------------------------------------------------------------
+# Model weights and compiled engines (downloaded / built at runtime, never committed)
+# ---------------------------------------------------------------------------
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+*.engine
+*.plan
+*.trt
+*.timing_cache
+
+# ---------------------------------------------------------------------------
+# Media (test fixtures are generated at test time)
+# ---------------------------------------------------------------------------
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.webm
+*.m2ts
+*.mts
+*.y4m
+*.yuv
+*.nut
+*.ffv1
+*.wav
+*.aac
+*.flac
+*.srt
+
+# ---------------------------------------------------------------------------
+# Runtime state
+# ---------------------------------------------------------------------------
+.neuralframe/
+*.db
+*.sqlite
+*.sqlite3
+*.db-journal
+*.db-wal
+*.db-shm
+*.log
+logs/
+tmp/
+scratch/
+benchmarks/runs/
+
+# Local configuration (config.example.yaml is committed)
+config.yaml
+.env
+.env.*
+
+# ---------------------------------------------------------------------------
+# Editors / OS
+# ---------------------------------------------------------------------------
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+desktop.ini
