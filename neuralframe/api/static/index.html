@@ -1,0 +1,446 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NeuralFrame</title>
+<style>
+  :root {
+    --bg: #f6f7f9; --panel: #ffffff; --text: #1b1f24; --muted: #5d6673; --line: #dde1e6;
+    --accent: #2f6fde; --accent-text: #ffffff; --ok: #1f8a4c; --bad: #c43d3d; --warn: #b7791f;
+    --track: #e7eaee; --radius: 10px;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #111418; --panel: #1a1e24; --text: #e6e9ed; --muted: #9aa4b1; --line: #2c323a;
+      --accent: #5b8ff0; --accent-text: #0d1117; --ok: #45c07a; --bad: #ef6b6b; --warn: #e3a94a;
+      --track: #262c34;
+    }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.45 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 18px 24px; border-bottom: 1px solid var(--line); display: flex; gap: 16px;
+           align-items: baseline; flex-wrap: wrap; }
+  header h1 { font-size: 20px; margin: 0; }
+  header .sys { color: var(--muted); font-size: 13px; }
+  main { max-width: 1100px; margin: 0 auto; padding: 20px 16px 48px; display: grid; gap: 18px; }
+  section { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); padding: 18px; }
+  h2 { font-size: 16px; margin: 0 0 12px; }
+  .drop { border: 2px dashed var(--line); border-radius: var(--radius); padding: 26px; text-align: center;
+          color: var(--muted); cursor: pointer; transition: border-color .15s; }
+  .drop.over { border-color: var(--accent); color: var(--text); }
+  .row { display: flex; gap: 12px; flex-wrap: wrap; align-items: center; margin-top: 12px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 14px; margin-top: 14px; }
+  label { display: block; font-size: 13px; color: var(--muted); margin-bottom: 4px; }
+  input[type=text], input[type=number], select { width: 100%; padding: 8px 10px; border-radius: 8px;
+         border: 1px solid var(--line); background: var(--bg); color: var(--text); font: inherit; }
+  .seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+  .seg button { border: 0; background: transparent; color: var(--text); padding: 8px 14px; font: inherit;
+                cursor: pointer; }
+  .seg button.on { background: var(--accent); color: var(--accent-text); }
+  .seg button:disabled { opacity: .4; cursor: not-allowed; }
+  button.primary, button.ghost { padding: 9px 16px; border-radius: 8px; font: inherit; cursor: pointer; }
+  button.primary { background: var(--accent); color: var(--accent-text); border: 0; font-weight: 600; }
+  button.primary:disabled { opacity: .5; cursor: not-allowed; }
+  button.ghost { background: transparent; color: var(--text); border: 1px solid var(--line); }
+  .muted { color: var(--muted); font-size: 13px; }
+  .info { font-size: 13px; color: var(--muted); margin-top: 10px; }
+  .bar { height: 12px; background: var(--track); border-radius: 6px; overflow: hidden; }
+  .bar > div { height: 100%; background: var(--accent); width: 0; transition: width .3s; }
+  .stats { display: flex; gap: 18px; flex-wrap: wrap; font-size: 13px; color: var(--muted); margin-top: 8px; }
+  .stats b { color: var(--text); font-weight: 600; }
+  .stages { display: grid; grid-template-columns: 110px 1fr 70px; gap: 6px 10px; font-size: 12px;
+            margin-top: 14px; align-items: center; }
+  .stages .mini { height: 8px; background: var(--track); border-radius: 4px; overflow: hidden; }
+  .stages .mini > div { height: 100%; background: var(--ok); }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th, td { text-align: left; padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  td.file { max-width: 280px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .state { font-weight: 600; }
+  .state.done { color: var(--ok); } .state.failed { color: var(--bad); }
+  .state.cancelled, .state.paused { color: var(--warn); }
+  .actions button { margin-right: 4px; padding: 4px 8px; font-size: 12px; }
+  .compare { position: relative; width: 100%; overflow: hidden; border-radius: 8px; background: #000;
+             user-select: none; touch-action: none; }
+  .compare img { display: block; width: 100%; height: auto; }
+  .compare .after { position: absolute; inset: 0; clip-path: inset(0 0 0 50%); }
+  .compare .handle { position: absolute; top: 0; bottom: 0; left: 50%; width: 2px; background: #fff;
+                     box-shadow: 0 0 4px rgba(0,0,0,.6); pointer-events: none; }
+  .compare .tag { position: absolute; top: 8px; padding: 2px 8px; border-radius: 4px; font-size: 12px;
+                  background: rgba(0,0,0,.6); color: #fff; }
+  .error { color: var(--bad); font-size: 13px; margin-top: 8px; white-space: pre-wrap; }
+  .hidden { display: none !important; }
+  @media (max-width: 640px) { header { padding: 14px 16px; } section { padding: 14px; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>NeuralFrame</h1>
+  <span class="sys" id="sys">connecting...</span>
+</header>
+<main>
+  <section>
+    <h2>1. Choose a file</h2>
+    <div class="drop" id="drop" tabindex="0" role="button" aria-label="Drop or choose a video or image">
+      Drop a video or image here, or click to choose one
+      <input type="file" id="file" class="hidden" accept="video/*,image/*">
+    </div>
+    <div class="row">
+      <input type="text" id="path" placeholder="...or a path on this machine, e.g. C:\Videos\clip.mp4" style="flex:1;min-width:240px">
+      <button class="ghost" id="usePath">Use path</button>
+    </div>
+    <div class="info" id="mediaInfo"></div>
+    <div class="error" id="fileError"></div>
+  </section>
+
+  <section id="optionsPanel" class="hidden">
+    <h2>2. What to do</h2>
+    <div class="seg" id="mode" role="group" aria-label="Mode">
+      <button data-mode="upscale" class="on">Upscale</button>
+      <button data-mode="framegen">Frame generation</button>
+      <button data-mode="both">Both</button>
+    </div>
+    <div class="grid">
+      <div id="upscaleOpts">
+        <label for="target">Output size</label>
+        <select id="target">
+          <option value="4k" selected>4K (2160p)</option>
+          <option value="8k">8K</option>
+          <option value="1440p">1440p</option>
+          <option value="1080p">1080p</option>
+          <option value="720p">720p</option>
+          <option value="x2">2x</option>
+          <option value="x3">3x</option>
+          <option value="x4">4x</option>
+          <option value="custom">Custom...</option>
+        </select>
+        <input type="text" id="customTarget" class="hidden" placeholder="e.g. 2560x1440, x1.5 or 1200p" style="margin-top:6px">
+      </div>
+      <div id="modelOpts">
+        <label for="model">Model</label>
+        <select id="model"><option value="">Automatic (from preset)</option></select>
+      </div>
+      <div>
+        <label for="preset">Preset</label>
+        <select id="preset"></select>
+      </div>
+      <div id="fpsOpts" class="hidden">
+        <label for="fps">Frame rate</label>
+        <select id="fps">
+          <option value="24">24 fps</option>
+          <option value="30">30 fps</option>
+          <option value="48">48 fps</option>
+          <option value="60" selected>60 fps</option>
+          <option value="120">120 fps</option>
+          <option value="custom">Custom...</option>
+        </select>
+        <input type="text" id="customFps" class="hidden" placeholder="e.g. 50, 59.94 or 24000/1001" style="margin-top:6px">
+      </div>
+      <div id="dropOpts" class="hidden">
+        <label for="repair">Dropped-frame repair</label>
+        <select id="repair">
+          <option value="auto" selected>Smart (keep intentional holds)</option>
+          <option value="on">Repair every repeated frame</option>
+          <option value="off">Off</option>
+        </select>
+      </div>
+      <div>
+        <label for="output">Output file (optional)</label>
+        <input type="text" id="output" placeholder="next to the input">
+      </div>
+    </div>
+    <div class="row">
+      <button class="primary" id="start">Start</button>
+      <span class="muted" id="startNote"></span>
+    </div>
+    <div class="error" id="startError"></div>
+  </section>
+
+  <section id="progressPanel" class="hidden">
+    <h2 id="progressTitle">Progress</h2>
+    <div class="bar" role="progressbar" aria-valuemin="0" aria-valuemax="100" id="bar"><div></div></div>
+    <div class="stats">
+      <span>state <b id="pState">-</b></span>
+      <span><b id="pPct">0%</b></span>
+      <span><b id="pFrames">0 / 0</b> frames</span>
+      <span><b id="pFps">0.0</b> fps</span>
+      <span>ETA <b id="pEta">-</b></span>
+      <span id="pVram"></span>
+    </div>
+    <div class="muted" id="pMsg" style="margin-top:6px"></div>
+    <div class="stages" id="stages"></div>
+    <div class="row">
+      <button class="ghost" id="cancel">Cancel</button>
+      <a class="ghost hidden" id="download" href="#"><button class="primary">Download result</button></a>
+    </div>
+    <div class="error" id="jobError"></div>
+  </section>
+
+  <section id="comparePanel" class="hidden">
+    <h2>Before / after</h2>
+    <div class="row" style="margin-top:0;margin-bottom:10px">
+      <label for="frameNo" style="margin:0">Frame</label>
+      <input type="number" id="frameNo" min="0" value="0" style="width:110px">
+      <button class="ghost" id="loadFrame">Show</button>
+      <span class="muted">drag across the image; left = source (bicubic), right = NeuralFrame</span>
+    </div>
+    <div class="compare" id="compare">
+      <img id="imgBefore" alt="source frame scaled with bicubic interpolation">
+      <img id="imgAfter" class="after" alt="processed frame">
+      <div class="handle" id="handle"></div>
+      <span class="tag" style="left:8px">before</span><span class="tag" style="right:8px">after</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>Jobs</h2>
+    <table>
+      <thead><tr><th>File</th><th>State</th><th style="width:28%">Progress</th><th>fps</th><th></th></tr></thead>
+      <tbody id="jobs"><tr><td colspan="5" class="muted">no jobs yet</td></tr></tbody>
+    </table>
+  </section>
+</main>
+<script>
+"use strict";
+const $ = (id) => document.getElementById(id);
+const state = { path: null, media: null, mode: "upscale", jobId: null, source: null };
+
+async function api(method, url, body) {
+  const opts = { method, headers: {} };
+  if (body instanceof FormData) opts.body = body;
+  else if (body !== undefined) { opts.body = JSON.stringify(body); opts.headers["Content-Type"] = "application/json"; }
+  const res = await fetch(url, opts);
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    const e = data.error || {};
+    throw new Error((e.message || res.statusText) + (e.hint ? "\n(" + e.hint + ")" : ""));
+  }
+  return data;
+}
+
+function fmtTime(s) {
+  if (s === null || s === undefined) return "-";
+  s = Math.round(s);
+  const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60;
+  return (h ? h + ":" + String(m).padStart(2, "0") : m) + ":" + String(r).padStart(2, "0");
+}
+function baseName(p) { return (p || "").split(/[\\/]/).pop(); }
+
+async function loadSystem() {
+  try {
+    const sys = await api("GET", "/v1/system");
+    const gpu = sys.gpus && sys.gpus.length ? sys.gpus.map(g => g.name).join(", ") : "CPU only";
+    $("sys").textContent = `v${sys.service.version} - ${gpu} - backend ${sys.selected.inference_backend}` +
+      ` - encoder ${sys.selected.encoder_hevc || sys.selected.encoder_h264 || "software"}`;
+    for (const p of sys.defaults.presets) {
+      const o = document.createElement("option"); o.value = p; o.textContent = p;
+      if (p === "balanced") o.selected = true;
+      $("preset").appendChild(o);
+    }
+    const models = await api("GET", "/v1/models");
+    for (const m of models.filter(m => m.kind !== "interpolation")) {
+      const o = document.createElement("option"); o.value = m.id;
+      o.textContent = `${m.id} (x${m.scale}${m.input !== "single" ? ", " + m.input : ""})`;
+      $("model").appendChild(o);
+    }
+  } catch (e) { $("sys").textContent = "service unavailable: " + e.message; }
+}
+
+// ---- file selection ---------------------------------------------------------------------------------
+const drop = $("drop");
+drop.addEventListener("click", () => $("file").click());
+drop.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") $("file").click(); });
+drop.addEventListener("dragover", (e) => { e.preventDefault(); drop.classList.add("over"); });
+drop.addEventListener("dragleave", () => drop.classList.remove("over"));
+drop.addEventListener("drop", (e) => {
+  e.preventDefault(); drop.classList.remove("over");
+  if (e.dataTransfer.files.length) uploadFile(e.dataTransfer.files[0]);
+});
+$("file").addEventListener("change", () => { if ($("file").files.length) uploadFile($("file").files[0]); });
+$("usePath").addEventListener("click", () => { if ($("path").value.trim()) selectPath($("path").value.trim()); });
+
+function uploadFile(file) {
+  $("fileError").textContent = "";
+  const form = new FormData(); form.append("file", file);
+  const xhr = new XMLHttpRequest();
+  xhr.open("POST", "/v1/uploads");
+  xhr.upload.onprogress = (e) => {
+    if (e.lengthComputable) $("mediaInfo").textContent = `uploading ${file.name}: ${Math.round(100 * e.loaded / e.total)}%`;
+  };
+  xhr.onload = () => {
+    const data = JSON.parse(xhr.responseText || "{}");
+    if (xhr.status >= 300) { $("fileError").textContent = (data.error || {}).message || "upload failed"; return; }
+    selectPath(data.path);
+  };
+  xhr.onerror = () => { $("fileError").textContent = "upload failed"; };
+  xhr.send(form);
+}
+
+async function selectPath(path) {
+  $("fileError").textContent = "";
+  try {
+    const media = await api("POST", "/v1/probe", { path });
+    state.path = media.path; state.media = media;
+    const v = media.video || {};
+    const parts = [baseName(media.path), v.size];
+    if (!media.is_image) {
+      const [num, den] = String(v.fps || "0/1").split("/").map(Number);
+      parts.push(`${(num / (den || 1)).toFixed(3)} fps`);
+      if (media.duration_s) parts.push(fmtTime(media.duration_s));
+      if (media.audio_streams && media.audio_streams.length) parts.push(`audio: ${media.audio_streams.join(", ")}`);
+    }
+    $("mediaInfo").textContent = parts.join(" - ");
+    $("optionsPanel").classList.remove("hidden");
+    for (const b of $("mode").querySelectorAll("button")) b.disabled = media.is_image && b.dataset.mode !== "upscale";
+    if (media.is_image) setMode("upscale");
+    $("startNote").textContent = media.is_image ? "images can only be upscaled" : "";
+  } catch (e) { $("fileError").textContent = e.message; }
+}
+
+// ---- options ----------------------------------------------------------------------------------------
+function setMode(mode) {
+  state.mode = mode;
+  for (const b of $("mode").querySelectorAll("button")) b.classList.toggle("on", b.dataset.mode === mode);
+  const up = mode !== "framegen", fg = mode !== "upscale";
+  $("upscaleOpts").classList.toggle("hidden", !up);
+  $("modelOpts").classList.toggle("hidden", !up);
+  $("fpsOpts").classList.toggle("hidden", !fg);
+  $("dropOpts").classList.toggle("hidden", !fg);
+}
+$("mode").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b && !b.disabled) setMode(b.dataset.mode); });
+$("target").addEventListener("change", () => $("customTarget").classList.toggle("hidden", $("target").value !== "custom"));
+$("fps").addEventListener("change", () => $("customFps").classList.toggle("hidden", $("fps").value !== "custom"));
+
+$("start").addEventListener("click", async () => {
+  $("startError").textContent = "";
+  const up = state.mode !== "framegen", fg = state.mode !== "upscale";
+  const options = { preset: $("preset").value || "balanced", upscale: up, interpolate: fg };
+  if (up && $("model").value) options.model = $("model").value;
+  if (fg) {
+    options.target_fps = $("fps").value === "custom" ? $("customFps").value.trim() : $("fps").value;
+    options.repair_drops = $("repair").value;
+  }
+  const body = { input: state.path, options };
+  if (up) body.target = $("target").value === "custom" ? $("customTarget").value.trim() : $("target").value;
+  if ($("output").value.trim()) body.output = $("output").value.trim();
+  $("start").disabled = true;
+  try {
+    const job = await api("POST", "/v1/jobs", body);
+    watch(job.id);
+    refreshJobs();
+  } catch (e) { $("startError").textContent = e.message; }
+  finally { $("start").disabled = false; }
+});
+
+// ---- progress ---------------------------------------------------------------------------------------
+function render(job) {
+  $("progressPanel").classList.remove("hidden");
+  $("progressTitle").textContent = "Progress - " + baseName(job.input);
+  const pct = job.percent || 0;
+  $("bar").firstElementChild.style.width = pct + "%";
+  $("bar").setAttribute("aria-valuenow", String(Math.round(pct)));
+  $("pState").textContent = job.state;
+  $("pPct").textContent = pct.toFixed(1) + "%";
+  $("pFrames").textContent = `${job.frames_done || 0} / ${job.frames_total || 0}`;
+  $("pFps").textContent = (job.fps || 0).toFixed(1);
+  $("pEta").textContent = fmtTime(job.eta_s);
+  const gpu = job.gpu ? Object.values(job.gpu)[0] : null;
+  $("pVram").innerHTML = gpu && gpu.used_mb !== undefined
+    ? `VRAM <b>${gpu.used_mb} / ${gpu.total_mb} MB</b> - GPU <b>${Math.round(gpu.util_pct || 0)}%</b>` : "";
+  $("pMsg").textContent = job.message || "";
+  const stages = job.stages || [];
+  const peak = Math.max(1, ...stages.map(s => s.busy_fps || 0));
+  $("stages").innerHTML = stages.map(s => `<span>${s.name}</span><div class="mini"><div style="width:${
+    Math.min(100, 100 * (s.busy_fps || 0) / peak)}%"></div></div><span>${(s.busy_fps || 0).toFixed(1)} fps</span>`).join("");
+  const running = !["done", "failed", "cancelled", "paused"].includes(job.state);
+  $("cancel").classList.toggle("hidden", !running);
+  $("jobError").textContent = job.error ? job.error.message + (job.error.hint ? "\n(" + job.error.hint + ")" : "") : "";
+  const dl = $("download");
+  dl.classList.toggle("hidden", job.state !== "done");
+  if (job.state === "done") { dl.href = `/v1/jobs/${job.id}/output`; showCompare(job); }
+}
+
+function watch(jobId) {
+  if (state.source) state.source.close();
+  state.jobId = jobId;
+  $("comparePanel").classList.add("hidden");
+  const es = new EventSource(`/v1/jobs/${jobId}/events`);
+  state.source = es;
+  es.addEventListener("progress", (e) => render(JSON.parse(e.data)));
+  es.addEventListener("end", () => { es.close(); refreshJobs(); });
+  es.onerror = () => { es.close(); setTimeout(async () => { try { render(await api("GET", `/v1/jobs/${jobId}`)); } catch (_) {} }, 1000); };
+}
+$("cancel").addEventListener("click", async () => {
+  if (state.jobId) { try { await api("POST", `/v1/jobs/${state.jobId}/cancel`); } catch (e) { $("jobError").textContent = e.message; } }
+});
+
+// ---- before / after ---------------------------------------------------------------------------------
+function showCompare(job) {
+  $("comparePanel").classList.remove("hidden");
+  const isImage = /\.(png|jpe?g|webp|bmp|tiff?)$/i.test(job.input || "");
+  $("frameNo").disabled = isImage;
+  loadFrame(job.id);
+}
+function loadFrame(jobId) {
+  const n = Math.max(0, parseInt($("frameNo").value || "0", 10));
+  const t = Date.now();
+  $("imgBefore").src = `/v1/jobs/${jobId}/preview?side=before&frame=${n}&t=${t}`;
+  $("imgAfter").src = `/v1/jobs/${jobId}/preview?side=after&frame=${n}&t=${t}`;
+}
+$("loadFrame").addEventListener("click", () => { if (state.jobId) loadFrame(state.jobId); });
+(function slider() {
+  const box = $("compare");
+  let dragging = false;
+  const move = (x) => {
+    const r = box.getBoundingClientRect();
+    const p = Math.min(100, Math.max(0, 100 * (x - r.left) / r.width));
+    $("imgAfter").style.clipPath = `inset(0 0 0 ${p}%)`;
+    $("handle").style.left = p + "%";
+  };
+  box.addEventListener("pointerdown", (e) => { dragging = true; box.setPointerCapture(e.pointerId); move(e.clientX); });
+  box.addEventListener("pointermove", (e) => { if (dragging) move(e.clientX); });
+  box.addEventListener("pointerup", () => { dragging = false; });
+})();
+
+// ---- job list ---------------------------------------------------------------------------------------
+async function refreshJobs() {
+  let jobs;
+  try { jobs = await api("GET", "/v1/jobs?limit=50"); } catch (_) { return; }
+  const body = $("jobs");
+  if (!jobs.length) { body.innerHTML = '<tr><td colspan="5" class="muted">no jobs yet</td></tr>'; return; }
+  body.innerHTML = "";
+  for (const j of jobs) {
+    const tr = document.createElement("tr");
+    const active = !["done", "failed", "cancelled", "paused", "queued"].includes(j.state);
+    const actions = [];
+    actions.push(`<button class="ghost" data-act="view">view</button>`);
+    if (active || j.state === "queued") actions.push(`<button class="ghost" data-act="cancel">cancel</button>`);
+    if (["failed", "cancelled", "paused"].includes(j.state)) actions.push(`<button class="ghost" data-act="resume">resume</button>`);
+    if (!active && j.state !== "queued") actions.push(`<button class="ghost" data-act="delete">remove</button>`);
+    tr.innerHTML = `<td class="file" title="${(j.input || "").replace(/"/g, "&quot;")}">${baseName(j.input)}</td>
+      <td class="state ${j.state}">${j.state}</td>
+      <td><div class="bar"><div style="width:${j.percent || 0}%"></div></div></td>
+      <td>${active ? (j.fps || 0).toFixed(1) : ""}</td>
+      <td class="actions">${actions.join("")}</td>`;
+    tr.querySelector(".actions").addEventListener("click", async (e) => {
+      const b = e.target.closest("button"); if (!b) return;
+      try {
+        if (b.dataset.act === "view") watch(j.id);
+        else if (b.dataset.act === "cancel") await api("POST", `/v1/jobs/${j.id}/cancel`);
+        else if (b.dataset.act === "resume") { await api("POST", `/v1/jobs/${j.id}/resume`); watch(j.id); }
+        else if (b.dataset.act === "delete") await api("DELETE", `/v1/jobs/${j.id}`);
+      } catch (err) { alert(err.message); }
+      refreshJobs();
+    });
+    body.appendChild(tr);
+  }
+}
+
+loadSystem();
+refreshJobs();
+setInterval(refreshJobs, 3000);
+</script>
+</body>
+</html>

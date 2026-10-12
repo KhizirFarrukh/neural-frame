@@ -87,8 +87,13 @@ markers = [
   "gpu: requires a CUDA-capable GPU (run locally)",
   "network: downloads model weights",
   "slow: long-running integration test",
+  "browser: drives the web UI in a headless Chromium-based browser (needs Playwright)",
 ]
 timeout = 600
+filterwarnings = [
+  # Third-party: Starlette's test client announcing a future httpx replacement.
+  "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
 
 [tool.ruff]
 line-length = 120
@@ -126,6 +131,8 @@ module = [
   "neuralframe.inference.*",
   "neuralframe.ops.*",
   "neuralframe.models.*",
+  "neuralframe.framegen.*",
+  "neuralframe.api.*",
   "neuralframe.config",
   "neuralframe.errors",
   "neuralframe.colorspace",

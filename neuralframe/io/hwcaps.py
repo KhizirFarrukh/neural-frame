@@ -168,6 +168,20 @@ class Capabilities(BaseModel):
             return "torch"
         return "none"
 
+    def selected(self) -> dict[str, str | None]:
+        """What a job would use by default on this machine."""
+        def name(codec: str) -> str | None:
+            choice = self.select_encoder(codec, ten_bit=False)
+            return choice.name if choice else None
+
+        return {
+            "inference_backend": self.best_inference_backend(),
+            "hw_decode_h264": self.select_hwaccel("h264") or "software",
+            "encoder_hevc": name("hevc"),
+            "encoder_h264": name("h264"),
+            "encoder_av1": name("av1"),
+        }
+
 
 # ---------------------------------------------------------------------------------------------------------
 # Library detection

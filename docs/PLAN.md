@@ -110,6 +110,9 @@ desktop GUI application.
   (≈0.6 MB/frame at 480p, negligible next to inference).
 - Weights are downloaded on first use; SHA256 values in the registry are pinned from the official release
   files.
+- The REST API has no authentication: it binds to 127.0.0.1 by default and only touches files inside the
+  configured input/output roots (plus its upload/output folders). Exposing it on a network is the
+  operator's decision (a warning is printed).
 - Drop detection works on 64x36 thumbnails: a frozen frame is found when its neighbourhood moves. A drop
   inside a nearly static shot (only a small object moving) is indistinguishable from a still frame and is
   left alone; `framegen.repair_drops: on` repairs every repeat instead.
@@ -197,6 +200,17 @@ desktop GUI application.
 - Matroska stores no per-stream duration and its container duration includes audio padding (21 ms for
   AAC, more than one 60 fps frame); verification measures the video span from the packet scan.
 
+### Findings from Milestone 7
+
+- A before/after comparison is only fair in one colorimetry: the job converts untagged SD (BT.601 matrix,
+  SMPTE-C primaries) to BT.709, so the raw source frame looked colour-shifted next to the output. The
+  preview converts the "before" frame with FFmpeg's `colorspace` filter (accurate mode) using the job's
+  colour plan; red bar 252,0,0 vs output 247,18,0 became 245,18,0.
+- SSE streams poll an in-memory version counter per job (0.2 s) instead of parking a thread per client;
+  the store is written at most once a second per job plus on state changes.
+- Through the service the reference job (480p -> 1080p + 59.94 fps, animevideov3) runs at 29.7 fps, the
+  same as the CLI.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -275,10 +289,16 @@ desktop GUI application.
       kill-and-resume identical; real RIFE beats blending on CUDA
 
 ### M7 — Job service + web UI
-- [ ] SQLite job store (SQLAlchemy 2.0), priorities, restart-safe queue, one active job per GPU
-- [ ] FastAPI: jobs CRUD, SSE events, cancel/resume, preview, models, system; path-root sandboxing
-- [ ] `neuralframe queue add|list|cancel|resume`, `neuralframe serve`
-- [ ] Single-page web UI (drop file, preset, live per-stage throughput, before/after slider)
+- [x] SQLite job store (SQLAlchemy 2.0, WAL), priority + FIFO, restart-safe queue (interrupted jobs are
+      re-queued with resume), one worker / active job per GPU, throttled progress persistence
+- [x] FastAPI (`neuralframe/api/`): jobs create/list/get/delete, SSE events, cancel/resume, preview
+      (before/after PNG at output size and colorimetry), report, output download, uploads, probe, models,
+      system; input/output roots enforced after resolving symlinks and `..`; binds 127.0.0.1 by default
+- [x] `neuralframe serve`, `neuralframe queue add|list|cancel|resume|watch`
+- [x] Single-page web UI: drop/upload or path, Upscale / Frame generation / Both (images: upscale only),
+      4K default + custom targets, 60 fps default + custom, drop repair, live progress with per-stage
+      throughput and VRAM, cancel/resume, download, before/after slider; driven in headless Edge by a
+      Playwright test
 
 ### M8 — Desktop GUI application
 - [ ] PySide6 app (`neuralframe-gui`): file picker + drag-and-drop for images and videos, input summary

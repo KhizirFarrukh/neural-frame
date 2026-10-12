@@ -187,6 +187,9 @@ class ApiConfig(_Section):
     input_roots: list[Path] = Field(default_factory=lambda: [Path.home()])
     output_roots: list[Path] = Field(default_factory=lambda: [Path.home()])
     upload_dir: Path | None = None
+    """Where uploaded files are stored (default: <cache_dir>/uploads); always readable by jobs."""
+    output_dir: Path | None = None
+    """Outputs of uploaded files and inputs outside the output roots (default: <cache_dir>/outputs)."""
     max_upload_gb: float = 20.0
 
 

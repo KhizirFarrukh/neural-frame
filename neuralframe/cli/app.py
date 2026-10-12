@@ -29,6 +29,8 @@ app = typer.Typer(
 )
 models_app = typer.Typer(help="List, download, verify and export models.", no_args_is_help=True)
 app.add_typer(models_app, name="models")
+queue_app = typer.Typer(help="Submit and manage jobs on a running `neuralframe serve`.", no_args_is_help=True)
+app.add_typer(queue_app, name="queue")
 
 console = Console(stderr=True)
 out = Console()
@@ -105,14 +107,7 @@ def doctor(
     except NeuralFrameError as exc:
         _fail(exc)
         return
-    hevc = caps.select_encoder("hevc", ten_bit=False)
-    choices = {
-        "inference_backend": caps.best_inference_backend(),
-        "hw_decode_h264": caps.select_hwaccel("h264") or "software",
-        "encoder_hevc": hevc.name if hevc else None,
-        "encoder_h264": (e.name if (e := caps.select_encoder("h264", ten_bit=False)) else None),
-        "encoder_av1": (e.name if (e := caps.select_encoder("av1", ten_bit=False)) else None),
-    }
+    choices = caps.selected()
     if as_json:
         out.print_json(json.dumps({**caps.model_dump(mode="json"), "selected": choices}))
         return
@@ -554,6 +549,168 @@ def models_export(
         mx, mean, psnr = compare_outputs(ref_out, out)
         table.add_row(name, precision, f"{mx:.5f}", f"{mean:.6f}", f"{psnr:.1f}")
     console.print(table)
+
+
+# -------------------------------------------------------------------------------------------------------
+# serve / queue
+# -------------------------------------------------------------------------------------------------------
+
+
+@app.command()
+def serve(
+    ctx: typer.Context,
+    host: str | None = typer.Option(None, "--host", help="Bind address (default from config: 127.0.0.1)."),
+    port: int | None = typer.Option(None, "--port", help="Port (default from config: 8765)."),
+    workers: str | None = typer.Option(
+        None, "--workers", help='Job workers: "cpu" or GPU indices like "0,1" (default: one per GPU).'
+    ),
+) -> None:
+    """Run the local job service: REST API, progress events and the web UI."""
+    import uvicorn
+
+    from neuralframe.api.app import create_app
+    from neuralframe.api.manager import JobManager
+    from neuralframe.api.store import JobStore
+
+    settings = _state(ctx).settings
+    host = host or settings.api.host
+    port = port or settings.api.port
+    if host not in ("127.0.0.1", "localhost", "::1"):
+        console.print(f"[yellow]warning[/]: binding to {host} exposes the API to the network; it has no "
+                      "authentication (file access is limited to api.input_roots / api.output_roots)")
+    names = None
+    if workers:
+        names = ["cpu"] if workers.strip() == "cpu" else [f"cuda:{int(i)}" for i in workers.split(",")]
+    manager = JobManager(settings, JobStore(settings.paths.database()), workers=names)
+    console.print(f"NeuralFrame service on http://{host}:{port}  (workers: {', '.join(manager.workers)}; "
+                  f"jobs db: {settings.paths.database()})")
+    uvicorn.run(create_app(settings, manager=manager), host=host, port=port, log_level="warning")
+
+
+def _client(server: str) -> Any:
+    """HTTP client for the queue commands (replaced in tests)."""
+    import httpx
+
+    return httpx.Client(base_url=server, timeout=60)
+
+
+def _server(ctx: typer.Context, server: str | None) -> str:
+    settings = _state(ctx).settings
+    return server or f"http://{settings.api.host}:{settings.api.port}"
+
+
+def _call(server: str, method: str, path: str, body: Any = None) -> Any:
+    import httpx
+
+    try:
+        with _client(server) as client:
+            response = client.request(method, path, json=body)
+    except httpx.TransportError as exc:
+        console.print(f"[red]cannot reach {server}[/]: {exc}\n  hint: start the service with `neuralframe serve`")
+        raise typer.Exit(2) from exc
+    if response.status_code >= 400:
+        error = (response.json() if response.content else {}).get("error", {})
+        console.print(f"[red]error[/] [{error.get('code', response.status_code)}] {error.get('message', '')}")
+        if error.get("hint"):
+            console.print(f"  hint: {error['hint']}")
+        raise typer.Exit(1)
+    return response.json() if response.content else None
+
+
+@queue_app.command("add")
+def queue_add(
+    ctx: typer.Context,
+    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Input video or image."),
+    output: Path | None = typer.Option(None, "--output", "-o", help="Output file (default: next to the input)."),
+    target: str | None = typer.Option(None, "--target", "-t", help="4k (default), 1440p, 1080p, x2, 1920x1080"),
+    model: str | None = typer.Option(None, "--model", "-m"),
+    preset: str = typer.Option("balanced", "--preset", "-p"),
+    interpolate: bool = typer.Option(False, "--interpolate", "-i", help="Frame generation (default 60 fps)."),
+    fps: str | None = typer.Option(None, "--fps", help="Frame generation target (implies -i)."),
+    no_upscale: bool = typer.Option(False, "--no-upscale", help="Frame generation only."),
+    repair_drops: str | None = typer.Option(None, "--repair-drops", help="auto | on | off"),
+    priority: int = typer.Option(0, "--priority", help="Higher runs first."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-y"),
+    server: str | None = typer.Option(None, "--server", help="Service URL (default from config)."),
+) -> None:
+    """Queue a job on the service."""
+    options: dict[str, Any] = {"preset": preset, "upscale": not no_upscale, "interpolate": interpolate or bool(fps),
+                               "overwrite": overwrite}
+    for key, value in (("model", model), ("target_fps", fps), ("repair_drops", repair_drops)):
+        if value is not None:
+            options[key] = value
+    body = {"input": str(input_path.resolve()), "output": str(output.resolve()) if output else None,
+            "target": target, "priority": priority, "options": options}
+    job = _call(_server(ctx, server), "POST", "/v1/jobs", body)
+    console.print(f"queued [bold]{job['id']}[/] -> {job['output']}")
+    out.print(job["id"])
+
+
+@queue_app.command("list")
+def queue_list(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(False, "--json"),
+    server: str | None = typer.Option(None, "--server"),
+) -> None:
+    """Show queued, running and finished jobs."""
+    jobs = _call(_server(ctx, server), "GET", "/v1/jobs")
+    if as_json:
+        out.print_json(json.dumps(jobs))
+        return
+    table = Table(title="Jobs", title_justify="left")
+    for col in ("id", "state", "progress", "fps", "input", "output"):
+        table.add_column(col, no_wrap=col in ("id", "state"))
+    for j in jobs:
+        table.add_row(j["id"], j["state"], f"{j['percent']:.1f}%", f"{j['fps']:.1f}" if j["fps"] else "",
+                      Path(j["input"] or "").name, Path(j["output"] or "").name)
+    console.print(table)
+
+
+@queue_app.command("cancel")
+def queue_cancel(ctx: typer.Context, job_id: str, server: str | None = typer.Option(None, "--server")) -> None:
+    """Cancel a job (finished chunks are kept so it can be resumed)."""
+    job = _call(_server(ctx, server), "POST", f"/v1/jobs/{job_id}/cancel")
+    console.print(f"{job['id']}: {job['state']}")
+
+
+@queue_app.command("resume")
+def queue_resume(ctx: typer.Context, job_id: str, server: str | None = typer.Option(None, "--server")) -> None:
+    """Queue a cancelled, failed or paused job again; it continues from its last finished chunk."""
+    job = _call(_server(ctx, server), "POST", f"/v1/jobs/{job_id}/resume")
+    console.print(f"{job['id']}: {job['state']}")
+
+
+@queue_app.command("watch")
+def queue_watch(ctx: typer.Context, job_id: str, server: str | None = typer.Option(None, "--server")) -> None:
+    """Follow a job's progress until it ends."""
+    import httpx
+
+    url = _server(ctx, server)
+    progress = Progress(TextColumn("[bold]{task.fields[state]:<9}"), BarColumn(), TaskProgressColumn(),
+                        TextColumn("{task.fields[fps]:.1f} fps"), TimeRemainingColumn(), console=console)
+    task = progress.add_task("job", total=100, state="", fps=0.0)
+    final: dict[str, Any] = {}
+    try:
+        with _client(url) as client, progress, client.stream("GET", f"/v1/jobs/{job_id}/events",
+                                                             timeout=None) as response:
+            if response.status_code >= 400:
+                response.read()
+                _call(url, "GET", f"/v1/jobs/{job_id}")  # prints the error and exits
+            event = ""
+            for line in response.iter_lines():
+                if line.startswith("event:"):
+                    event = line[6:].strip()
+                elif line.startswith("data:") and event == "progress":
+                    final = json.loads(line[5:])
+                    progress.update(task, completed=final.get("percent", 0), state=final.get("state", ""),
+                                    fps=final.get("fps") or 0.0)
+    except httpx.TransportError as exc:
+        console.print(f"[red]cannot reach {url}[/]: {exc}")
+        raise typer.Exit(2) from exc
+    state = final.get("state", "unknown")
+    console.print(f"{job_id}: {state} {final.get('output') or ''}")
+    if state != "done":
+        raise typer.Exit(1)
 
 
 def main() -> None:

@@ -98,6 +98,7 @@ api:
   # input_roots: [/videos/in]
   # output_roots: [/videos/out]
   upload_dir: null      # where uploaded files are stored (default: <cache_dir>/uploads)
+  output_dir: null      # outputs for uploads / inputs outside output_roots (default: <cache_dir>/outputs)
   max_upload_gb: 20.0
 
 logging:
