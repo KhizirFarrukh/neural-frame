@@ -211,6 +211,16 @@ desktop GUI application.
 - Through the service the reference job (480p -> 1080p + 59.94 fps, animevideov3) runs at 29.7 fps, the
   same as the CLI.
 
+### Findings from Milestone 8
+
+- Results cross from worker threads to Qt through a dispatcher `QObject` with a queued connection,
+  parented to the window, so callbacks for a closed window are dropped (pytest-qt caught a preview that
+  finished after teardown touching a deleted widget).
+- Python unbinds `except ... as exc` names when the block ends, so error callbacks posted to the GUI
+  thread bind the exception eagerly (`functools.partial`); a lambda would raise `NameError` instead.
+- The reference job (480p -> 1080p + 59.94 fps, animevideov3) takes 21 s from the GUI, the same throughput
+  as the CLI and the service (all three run the same `JobRunner`).
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -301,14 +311,19 @@ desktop GUI application.
       Playwright test
 
 ### M8 — Desktop GUI application
-- [ ] PySide6 app (`neuralframe-gui`): file picker + drag-and-drop for images and videos, input summary
-      (resolution, fps, duration, detected drops after analysis)
-- [ ] Mode: Upscale / Frame generation / Both (video); Upscale only (image)
-- [ ] Upscale options: 4K default, preset heights, scale factor, exact W×H, model (auto by content),
-      quality preset; frame-gen options: target fps (60 default, custom), drop repair toggle
-- [ ] Runs the same pipeline in a worker thread; live progress bar, ETA, fps, stage, cancel/resume
-- [ ] Output path chooser, before/after preview, open file / show in folder on completion
-- [ ] GUI smoke tests (pytest-qt, offscreen)
+- [x] PySide6 app (`neuralframe-gui`, also `neuralframe gui`; extra `[gui]`): file picker + drag-and-drop
+      for images and videos, input summary with thumbnail, "Scan for dropped frames" (the job's cached
+      analysis pass: frozen frames, gaps, scene cuts, intentional holds)
+- [x] Mode: Upscale / Frame generation / Both (video); Upscale only (image)
+- [x] Upscale options: 4K default, 8K/1440p/1080p/720p, 2x/3x/4x, custom (W×H, xF, NNNp), model (automatic
+      from preset or any registered model), quality preset; frame generation: 60 fps default + presets +
+      custom (59.94, 24000/1001 ...), drop repair (smart / every repeat / off)
+- [x] Runs the same `JobRunner` in a worker thread; live progress bar, frames, fps, ETA, VRAM/GPU load,
+      per-stage throughput, cancel (keeps finished chunks) and resume
+- [x] Output name suggested from the task (`clip_upscaled_60fps.mkv`), save-as dialog, replace prompt,
+      open result / show in folder, before/after compare view with frame selector
+- [x] GUI tests (pytest-qt, offscreen): defaults, video and image flows, scan + frame generation,
+      cancel/resume with chunk reuse, input validation
 
 ### M9 — Quality, benchmarks, docs
 - [ ] PSNR/SSIM (NumPy), LPIPS (optional), VMAF (libvmaf) vs bicubic/Lanczos baselines

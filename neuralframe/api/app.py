@@ -3,15 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import io
 import json
 import shutil
-import subprocess
 import time
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from fractions import Fraction
 from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
@@ -26,15 +23,16 @@ from neuralframe.api.paths import PathNotAllowed, check_input, check_output, saf
 from neuralframe.api.store import TERMINAL_STATES, JobStore
 from neuralframe.config import Settings, builtin_presets
 from neuralframe.core.job import JobSpec, media_summary
+from neuralframe.core.naming import suggest_output
 from neuralframe.core.planning import TargetSpec
+from neuralframe.core.preview import colour_match_filter, frame_png, frame_time, side_by_side
 from neuralframe.errors import ErrorCode, NeuralFrameError
-from neuralframe.io.ffmpeg import FFmpegTools, locate_ffmpeg, popen_kwargs
+from neuralframe.io.ffmpeg import FFmpegTools, locate_ffmpeg
 from neuralframe.io.probe import probe
 from neuralframe.log import get_logger
 
 log = get_logger(component="api")
 
-IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp", ".bmp", ".tif", ".tiff"}
 
 
 class JobCreate(BaseModel):
@@ -58,57 +56,10 @@ def _error(status: int, code: str, message: str, hint: str | None = None) -> JSO
 
 
 def default_output(input_path: Path, spec: JobSpec, roots: list[Path], fallback_dir: Path) -> Path:
-    """``<stem>_<what was done><ext>`` next to the input when allowed, else in the outputs folder."""
-    image = input_path.suffix.lower() in IMAGE_SUFFIXES
-    tags = []
-    if spec.upscale:
-        tags.append("upscaled")
-    if spec.interpolate and not image:
-        tags.append(f"{(spec.target_fps or 'fps').replace('/', '-')}fps" if spec.target_fps else "framegen")
-    suffix = input_path.suffix.lower() if image else ".mkv"
+    """Next to the input when that folder is an output root, else in the service's outputs folder."""
     folder = input_path.parent if within(input_path.parent, roots) else fallback_dir
-    candidate = folder / f"{input_path.stem}_{'_'.join(tags) or 'out'}{suffix}"
-    n = 2
-    while candidate.exists():
-        candidate = folder / f"{input_path.stem}_{'_'.join(tags) or 'out'}_{n}{suffix}"
-        n += 1
-    return candidate
-
-
-# Our colour enums -> names of FFmpeg's colorspace filter (BT.601 625/525 share one matrix).
-_CS_MATRIX = {"bt601": "smpte170m", "bt709": "bt709", "bt2020nc": "bt2020ncl", "smpte240m": "smpte240m", "fcc": "fcc"}
-
-
-def colour_match_filter(report: dict[str, Any] | None) -> str | None:
-    """FFmpeg filter giving a source frame the job's output colorimetry, so "before" and "after" compare
-    like for like (the job may convert matrix and primaries, e.g. SD SMPTE-C to BT.709)."""
-    color = (report or {}).get("plan", {}).get("color")
-    if not color or color.get("hdr_passthrough"):
-        return None
-    src, dst = color["input"], color["output"]
-    ispace, space = _CS_MATRIX.get(src["matrix"]), _CS_MATRIX.get(dst["colorspace"])
-    if ispace is None or space is None:
-        return None
-    if (ispace, src["primaries"], src["range"]) == (space, dst["color_primaries"], dst["color_range"]):
-        return None
-    return (f"colorspace=ispace={ispace}:iprimaries={src['primaries']}:itrc={src['transfer']}:"
-            f"irange={src['range']}:space={space}:primaries={dst['color_primaries']}:trc={dst['color_trc']}:"
-            f"range={dst['color_range']}:fast=0")
-
-
-def _frame_png(tools: FFmpegTools, path: Path, seconds: float, size: tuple[int, int] | None,
-               colour: str | None = None) -> bytes:
-    args = [tools.ffmpeg, "-hide_banner", "-nostdin", "-loglevel", "error", "-ss", f"{max(seconds, 0.0):.6f}",
-            "-i", str(path), "-frames:v", "1", "-an", "-sn"]
-    filters = [f for f in (colour, f"scale={size[0]}:{size[1]}:flags=bicubic" if size else None) if f]
-    if filters:
-        args += ["-vf", ",".join(filters)]
-    args += ["-f", "image2pipe", "-c:v", "png", "pipe:1"]
-    proc = subprocess.run(args, capture_output=True, timeout=120, check=False, **popen_kwargs())
-    if proc.returncode != 0 or not proc.stdout:
-        raise NeuralFrameError(ErrorCode.DECODE_FAILED, f"cannot extract a preview frame from {path.name}: "
-                               + proc.stderr.decode(errors="replace").strip()[-300:])
-    return bytes(proc.stdout)
+    return suggest_output(input_path, upscale=spec.upscale, interpolate=spec.interpolate,
+                          target_fps=spec.target_fps, folder=folder)
 
 
 def create_app(settings: Settings, *, manager: JobManager | None = None, start_workers: bool = True) -> FastAPI:
@@ -331,10 +282,7 @@ def create_app(settings: Settings, *, manager: JobManager | None = None, start_w
         record = job_or_404(job_id)
         ff = tools()
         source = Path(record["input"])
-        media = probe(source, ff)
-        video = media.require_video()
-        fps = video.fps if video.fps and video.fps > 0 else Fraction(25)
-        seconds = 0.0 if media.is_image else float((frame - Fraction(1, 2)) / fps)
+        seconds = frame_time(probe(source, ff), frame)
         output = Path(record["output"])
         done = record["state"] == "done" and output.is_file()
         if side in ("after", "both") and not done:
@@ -347,18 +295,10 @@ def create_app(settings: Settings, *, manager: JobManager | None = None, start_w
             report_path = Path(record.get("report_path") or "")
             if report_path.is_file():
                 colour = colour_match_filter(json.loads(report_path.read_text(encoding="utf-8")))
-        before = _frame_png(ff, source, seconds, size, colour) if side in ("before", "both") else b""
-        after = _frame_png(ff, output, seconds, None) if side in ("after", "both") else b""
+        before = frame_png(ff, source, seconds, size, colour) if side in ("before", "both") else b""
+        after = frame_png(ff, output, seconds) if side in ("after", "both") else b""
         if side != "both":
             return Response(before or after, media_type="image/png")
-        from PIL import Image
-
-        left, right = Image.open(io.BytesIO(before)), Image.open(io.BytesIO(after))
-        canvas = Image.new("RGB", (left.width + right.width, max(left.height, right.height)))
-        canvas.paste(left.convert("RGB"), (0, 0))
-        canvas.paste(right.convert("RGB"), (left.width, 0))
-        buf = io.BytesIO()
-        canvas.save(buf, format="PNG")
-        return Response(buf.getvalue(), media_type="image/png")
+        return Response(side_by_side(before, after), media_type="image/png")
 
     return app

@@ -45,10 +45,13 @@ onnx-directml = ["onnx>=1.16", "onnxruntime-directml>=1.18"]
 tensorrt = ["tensorrt-cu13>=10.0,<11"]
 tensorrt-cu12 = ["tensorrt-cu12>=10.0,<11"]
 lpips = ["lpips>=0.1.4"]
+# Desktop application (`neuralframe-gui`).
+gui = ["pyside6-essentials>=6.7"]
 dev = [
   "pytest>=8",
   "pytest-benchmark>=4",
   "pytest-timeout>=2.3",
+  "pytest-qt>=4.4",
   "mypy>=1.10",
   "ruff>=0.5",
   "types-PyYAML",
@@ -56,6 +59,9 @@ dev = [
 
 [project.scripts]
 neuralframe = "neuralframe.cli.app:main"
+
+[project.gui-scripts]
+neuralframe-gui = "neuralframe.gui.app:main"
 
 # ---------------------------------------------------------------------------
 # Build (scikit-build-core drives CMake for the native module in native/)
@@ -114,6 +120,7 @@ ignore = [
 
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "N803", "N806"]
+"neuralframe/gui/**" = ["N802"]  # Qt event handler overrides are camelCase
 
 [tool.mypy]
 python_version = "3.11"
@@ -133,6 +140,7 @@ module = [
   "neuralframe.models.*",
   "neuralframe.framegen.*",
   "neuralframe.api.*",
+  "neuralframe.gui.*",
   "neuralframe.config",
   "neuralframe.errors",
   "neuralframe.colorspace",

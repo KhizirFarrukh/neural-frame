@@ -586,6 +586,24 @@ class JobRunner:
         self._analysis = result
         return result
 
+    def scan_drops(self, path: Path) -> dict[str, Any]:
+        """The frame generation analysis on its own: frozen frames, timestamp gaps and scene cuts of a video.
+
+        Uses the same cached analysis pass as a job, so a following frame generation job does not repeat it."""
+        tools = locate_ffmpeg(self.settings.ffmpeg.ffmpeg, self.settings.ffmpeg.ffprobe)
+        media = probe(path, tools)
+        video = media.require_video()
+        if media.is_image:
+            raise NeuralFrameError(ErrorCode.INVALID_INPUT, "dropped frames can only be scanned in videos")
+        geometry, _ = plan_geometry(video, TargetSpec.native(), 1)
+        decode = plan_decode(video, path, tools, self.capabilities(tools), self.settings.decode, geometry)
+        analysis = self.run_analysis(JobSpec(input=path, output=path.with_suffix(".scan")), tools, media, decode)
+        fg = self.settings.framegen
+        cuts = analysis.scene_cuts(self.settings.chunking.scene_threshold)
+        drops = detect_drops(analysis, cuts, repair=fg.repair_drops, dup_threshold=fg.dup_threshold,
+                             motion_threshold=fg.motion_threshold)
+        return {"frames": analysis.frames, "scene_cuts": cuts, "fps": str(video.fps), **drops.summary()}
+
     def resolve_framegen(self, spec: JobSpec, model: ModelSpec, notes: list[str]) -> tuple[str | None, str]:
         """Frame generation engine (None when off) and whether it runs before or after super-resolution."""
         if not spec.interpolate:

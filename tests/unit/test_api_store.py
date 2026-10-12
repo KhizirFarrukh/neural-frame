@@ -127,7 +127,7 @@ def test_safe_filename(name: str, expected: str) -> None:
 
 
 def test_colour_match_filter_follows_the_job_colour_plan() -> None:
-    from neuralframe.api.app import colour_match_filter
+    from neuralframe.core.preview import colour_match_filter
 
     sd = {"plan": {"color": {
         "input": {"matrix": "bt601", "range": "tv", "primaries": "smpte170m", "transfer": "bt709"},

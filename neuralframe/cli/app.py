@@ -552,8 +552,22 @@ def models_export(
 
 
 # -------------------------------------------------------------------------------------------------------
-# serve / queue
+# gui / serve / queue
 # -------------------------------------------------------------------------------------------------------
+
+
+@app.command()
+def gui(
+    input_path: Path | None = typer.Argument(None, help="Video or image to open."),
+    config: Path | None = typer.Option(None, "--config", "-c", help="YAML config file."),
+) -> None:
+    """Open the desktop application (same as `neuralframe-gui`)."""
+    from neuralframe.gui.app import main as gui_main
+
+    args = [str(input_path)] if input_path else []
+    if config:
+        args += ["--config", str(config)]
+    raise typer.Exit(gui_main(args))
 
 
 @app.command()
