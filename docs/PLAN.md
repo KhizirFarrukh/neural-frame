@@ -110,25 +110,44 @@ desktop GUI application.
 - Weights are downloaded on first use; SHA256 values in the registry are pinned from the official release
   files.
 
+### Findings from Milestone 1 (measured, not assumed)
+
+- **Colour tags go on the frames (`setparams`) and, identically, on the encoder options.** If frame
+  properties and encoder options disagree, FFmpeg 9 inserts an implicit swscale pass during format
+  negotiation (measured: full-range FFV1 squeezed to limited range; untagged frames + tagged options changed
+  x264 output). Our samples are final, so nothing may be converted.
+- **Segments must be encoded with `-copyts`** so each keeps absolute PTS; concatenation is then a plain
+  packet copy (MP4 segments keep exact DTS; Matroska segments lose DTS and cannot be packet-concatenated).
+- **Matroska cannot hold `mov_text`**: MP4 → MKV jobs convert text subtitles (warning logged); audio is
+  always stream-copied bit-exact or the job is refused.
+- **NumPy SIMD transcendental functions are alignment-dependent** (an ULP between runs). Kernel weights and
+  transfer curves are built with scalar `math` into cached tables shared with the native module.
+- **x264 lossy decisions vary slightly under heavy CPU contention** even with identical input and
+  `-threads 1` (NVENC does not). Kill-and-resume bit-identity therefore holds for NVENC and for lossless
+  encodes; with x264/x265 the resumed output is valid and in sync but may differ by a few bytes.
+- `idet` misreports synthetic progressive content as interlaced, so `deinterlace=auto` trusts a
+  `progressive` container tag and only runs `idet` when the field order is unknown.
+- YAML 1.1 reads unquoted `on`/`off` as booleans; option validators map them back.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
-- [ ] `pyproject.toml` (scikit-build-core + pybind11), CMake skeleton with a minimal `_native` module
+- [x] `pyproject.toml` (scikit-build-core + pybind11), CMake skeleton with a minimal `_native` module
       (proves the MSVC toolchain early), `.gitattributes`, ruff/mypy/pytest config
-- [ ] `config.py` (pydantic-settings + YAML presets), `errors.py` (error taxonomy), `logging.py` (structlog)
-- [ ] `io/ffmpeg.py` (binary discovery, runners), `io/probe.py` → typed `MediaInfo`
+- [x] `config.py` (pydantic-settings + YAML presets), `errors.py` (error taxonomy), `logging.py` (structlog)
+- [x] `io/ffmpeg.py` (binary discovery, runners), `io/probe.py` → typed `MediaInfo`
       (fps, time base, VFR, colour, bit depth, rotation, SAR/DAR, HDR, interlacing, frame count)
-- [ ] `io/hwcaps.py` + `neuralframe doctor` (GPU, driver, CUDA/TRT/ORT, functional encoder/decoder probes)
-- [ ] Output planning: target geometry (4K default; preset height / scale factor / exact W×H; DAR →
+- [x] `io/hwcaps.py` + `neuralframe doctor` (GPU, driver, CUDA/TRT/ORT, functional encoder/decoder probes)
+- [x] Output planning: target geometry (4K default; preset height / scale factor / exact W×H; DAR →
       square pixels, standard-ratio snapping, even dims), colour plan, encoder selection
-- [ ] NumPy reference ops: YUV↔RGB (all matrices/ranges/subsamplings), separable Lanczos-3 resize
-- [ ] Decoder (NUT pipe), encoder (NUT pipe, per-encoder rate-control mapping), muxer (copy + subtitle
+- [x] NumPy reference ops: YUV↔RGB (all matrices/ranges/subsamplings), separable Lanczos-3 resize
+- [x] Decoder (NUT pipe), encoder (NUT pipe, per-encoder rate-control mapping), muxer (copy + subtitle
       compat, `-copyts`, atomic rename)
-- [ ] Threaded pipeline with bounded queues + per-stage metrics; `lanczos` classical model
-- [ ] `neuralframe upscale` end-to-end; job report JSON
-- [ ] Test fixtures generator (testsrc2 + tone + subtitles + chapters, scene cut, VFR, odd dims, 10-bit,
+- [x] Threaded pipeline with bounded queues + per-stage metrics; `lanczos` classical model
+- [x] `neuralframe upscale` end-to-end; job report JSON
+- [x] Test fixtures generator (testsrc2 + tone + subtitles + chapters, scene cut, VFR, odd dims, 10-bit,
       interlaced, rotation, SAR, HDR tags)
-- [ ] Tests: probe parsing, colour round-trips, resize vs reference, E2E (frame count, timestamps,
+- [x] Tests: probe parsing, colour round-trips, resize vs reference, E2E (frame count, timestamps,
       bit-exact audio packets, A/V sync within one frame, colour tags)
 
 ### M2 — Inference core

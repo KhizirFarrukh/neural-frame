@@ -1,0 +1,380 @@
+"""``neuralframe`` command-line interface (Typer)."""
+
+from __future__ import annotations
+
+import json
+import sys
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Any
+
+import typer
+from rich.console import Console
+from rich.progress import BarColumn, Progress, TaskProgressColumn, TextColumn, TimeRemainingColumn
+from rich.table import Table
+
+from neuralframe import __version__
+from neuralframe.config import Settings, load_settings
+from neuralframe.core.job import JobPlan, JobRunner, JobSpec, ProgressEvent
+from neuralframe.core.planning import TargetSpec
+from neuralframe.errors import JobCancelled, NeuralFrameError
+from neuralframe.log import configure_logging
+
+app = typer.Typer(
+    name="neuralframe",
+    help="NeuralFrame — high-performance local AI video upscaler.",
+    no_args_is_help=True,
+    add_completion=False,
+    pretty_exceptions_enable=False,
+)
+models_app = typer.Typer(help="List, download, verify and export models.", no_args_is_help=True)
+app.add_typer(models_app, name="models")
+
+console = Console(stderr=True)
+out = Console()
+
+
+@dataclass
+class AppState:
+    settings: Settings
+    verbose: bool
+
+
+def _state(ctx: typer.Context) -> AppState:
+    state = ctx.obj
+    assert isinstance(state, AppState)
+    return state
+
+
+def _fail(exc: NeuralFrameError) -> None:
+    console.print(f"[bold red]error[/] [{exc.code}] {exc.message}")
+    if exc.hint:
+        console.print(f"[dim]hint: {exc.hint}[/]")
+    raise typer.Exit(130 if isinstance(exc, JobCancelled) else 2)
+
+
+@app.callback()
+def _main(
+    ctx: typer.Context,
+    config: Path | None = typer.Option(None, "--config", "-c", help="YAML config file."),
+    verbose: bool = typer.Option(False, "--verbose", "-v", help="Show info-level logs."),
+    log_level: str | None = typer.Option(None, "--log-level", help="Override the log level."),
+    json_logs: bool = typer.Option(False, "--json-logs", help="Emit JSON log lines."),
+    log_file: Path | None = typer.Option(None, "--log-file", help="Also write JSON logs to this file."),
+) -> None:
+    try:
+        settings = load_settings(config)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    level = log_level or ("INFO" if verbose else ("WARNING" if not json_logs else settings.logging.level))
+    configure_logging(
+        level,
+        json_output=json_logs or settings.logging.json_output,
+        log_file=log_file or settings.logging.file,
+    )
+    ctx.obj = AppState(settings=settings, verbose=verbose)
+
+
+@app.command()
+def version() -> None:
+    """Print the NeuralFrame version."""
+    out.print(__version__)
+
+
+# -------------------------------------------------------------------------------------------------------
+# doctor
+# -------------------------------------------------------------------------------------------------------
+
+
+@app.command()
+def doctor(
+    ctx: typer.Context,
+    as_json: bool = typer.Option(False, "--json", help="Print machine-readable JSON."),
+    refresh: bool = typer.Option(False, "--refresh", help="Re-run codec probes instead of using the cache."),
+) -> None:
+    """Report GPU, driver, CUDA/TensorRT/ONNX Runtime and hardware codec availability."""
+    from neuralframe.io.ffmpeg import locate_ffmpeg
+    from neuralframe.io.hwcaps import detect_capabilities
+
+    settings = _state(ctx).settings
+    try:
+        tools = locate_ffmpeg(settings.ffmpeg.ffmpeg, settings.ffmpeg.ffprobe)
+        with console.status("probing hardware codecs..."):
+            caps = detect_capabilities(tools, cache_dir=settings.paths.cache_dir, refresh=refresh)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    hevc = caps.select_encoder("hevc", ten_bit=False)
+    choices = {
+        "inference_backend": caps.best_inference_backend(),
+        "hw_decode_h264": caps.select_hwaccel("h264") or "software",
+        "encoder_hevc": hevc.name if hevc else None,
+        "encoder_h264": (e.name if (e := caps.select_encoder("h264", ten_bit=False)) else None),
+        "encoder_av1": (e.name if (e := caps.select_encoder("av1", ten_bit=False)) else None),
+    }
+    if as_json:
+        out.print_json(json.dumps({**caps.model_dump(mode="json"), "selected": choices}))
+        return
+
+    sys_table = Table(title="System", show_header=False, title_justify="left")
+    rows: list[tuple[str, Any]] = [
+        ("NeuralFrame", caps.neuralframe),
+        ("Platform", caps.platform),
+        ("Python", caps.python),
+        ("CPU", f"{caps.cpu} ({caps.cpu_threads} threads)"),
+        ("RAM", f"{caps.ram_total_gb} GB total, {caps.ram_available_gb} GB available"),
+        ("FFmpeg", f"{caps.ffmpeg_version} ({caps.ffmpeg_path})"),
+        ("NVIDIA driver", caps.nvidia_driver or "not detected"),
+        ("CUDA (driver max)", caps.cuda_driver or "-"),
+        ("PyTorch", f"{caps.torch or 'not installed'}"
+         + (f" (CUDA {caps.torch_cuda}, available={caps.torch_cuda_available})" if caps.torch else "")),
+        ("cuDNN", caps.cudnn or "-"),
+        ("TensorRT", caps.tensorrt or "not installed"),
+        ("ONNX Runtime", f"{caps.onnxruntime or 'not installed'}"
+         + (f" {caps.onnxruntime_providers}" if caps.onnxruntime else "")),
+        ("Native module", caps.native_module or "not built (NumPy fallback)"),
+    ]
+    for key, value in rows:
+        sys_table.add_row(key, str(value))
+    console.print(sys_table)
+
+    gpu_table = Table(title="GPUs", title_justify="left")
+    for col in ("#", "Name", "VRAM total", "VRAM free", "Compute"):
+        gpu_table.add_column(col)
+    for g in caps.gpus:
+        gpu_table.add_row(
+            str(g.index), g.name, f"{g.total_vram_mb} MB", f"{g.free_vram_mb} MB", g.compute_capability or "-"
+        )
+    if not caps.gpus:
+        gpu_table.add_row("-", "no NVIDIA GPU detected (CPU / ONNX Runtime fallback)", "", "", "")
+    console.print(gpu_table)
+
+    codec_table = Table(title="Hardware decode / encode", title_justify="left")
+    for col in ("Kind", "Name", "Works", "10-bit", "Note"):
+        codec_table.add_column(col)
+    for h in caps.hwaccels:
+        codec_table.add_row("decode", h.name, _yes(h.functional), "", (h.error or "")[:60])
+    for e in caps.encoders:
+        codec_table.add_row("encode", e.name, _yes(e.functional), _yes(e.ten_bit) if e.functional else "",
+                            (e.error or "")[:60])
+    console.print(codec_table)
+
+    pick = Table(title="Will use", show_header=False, title_justify="left")
+    for key, value in choices.items():
+        pick.add_row(key, str(value))
+    console.print(pick)
+
+
+def _yes(flag: bool) -> str:
+    return "[green]yes[/]" if flag else "[red]no[/]"
+
+
+# -------------------------------------------------------------------------------------------------------
+# probe
+# -------------------------------------------------------------------------------------------------------
+
+
+@app.command("probe")
+def probe_cmd(
+    ctx: typer.Context,
+    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Media file."),
+    as_json: bool = typer.Option(False, "--json"),
+    frames: bool = typer.Option(False, "--frames", help="Also scan packets (exact frame count, VFR)."),
+) -> None:
+    """Show what NeuralFrame sees in a media file."""
+    from neuralframe.core.job import media_summary
+    from neuralframe.io.ffmpeg import locate_ffmpeg
+    from neuralframe.io.probe import probe, scan_frames
+
+    settings = _state(ctx).settings
+    try:
+        tools = locate_ffmpeg(settings.ffmpeg.ffmpeg, settings.ffmpeg.ffprobe)
+        media = probe(input_path, tools)
+        timeline = scan_frames(input_path, tools, media.video.index) if frames and media.video else None
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    data = media.model_dump(mode="json") if as_json else media_summary(media, timeline)
+    if timeline is not None and as_json:
+        data["timeline"] = {"frames": timeline.frame_count, "vfr": timeline.is_vfr}
+    out.print_json(json.dumps(data, default=str))
+
+
+# -------------------------------------------------------------------------------------------------------
+# upscale
+# -------------------------------------------------------------------------------------------------------
+
+
+def _target(
+    target: str | None, scale: float | None, target_height: int | None, size: str | None
+) -> TargetSpec:
+    chosen = [x for x in (target, scale, target_height, size) if x is not None]
+    if len(chosen) > 1:
+        raise typer.BadParameter("use only one of --target, --scale, --target-height, --size")
+    if scale is not None:
+        return TargetSpec.factor(scale)
+    if target_height is not None:
+        return TargetSpec.for_height(target_height)
+    if size is not None:
+        return TargetSpec.parse(size)
+    if target is not None:
+        return TargetSpec.parse(target)
+    return TargetSpec.default()
+
+
+def _print_plan(plan: JobPlan) -> None:
+    g, e = plan.geometry, plan.encoder
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_row("model", f"{plan.model.id} (x{plan.model.scale}, passes {g.model_passes})")
+    table.add_row("size", f"{g.decoded_width}x{g.decoded_height} -> {g.out_width}x{g.out_height}")
+    table.add_row("decode", plan.decode.describe())
+    table.add_row("encode", e.describe())
+    tags = e.color.ffmpeg_tags()
+    table.add_row("colour", f"{tags['colorspace']}/{tags['color_primaries']}/{tags['color_trc']} {tags['color_range']}")
+    table.add_row("frames", f"{plan.total_frames} in {len(plan.chunks.chunks)} chunk(s), ops={plan.ops}")
+    console.print(table)
+    for note in plan.notes:
+        console.print(f"  [dim]- {note}[/]")
+
+
+@app.command()
+def upscale(
+    ctx: typer.Context,
+    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Input video."),
+    output: Path = typer.Option(..., "--output", "-o", help="Output file (.mkv, .mp4, .mov, .webm)."),
+    model: str | None = typer.Option(None, "--model", "-m", help="Model id (see `neuralframe models list`)."),
+    target: str | None = typer.Option(
+        None, "--target", "-t", help="4k (default), 1440p, 1080p, 8k, native, 1920x1080, x2"
+    ),
+    scale: float | None = typer.Option(None, "--scale", help="Scale factor relative to the display size."),
+    target_height: int | None = typer.Option(None, "--target-height", help="Exact output height."),
+    size: str | None = typer.Option(None, "--size", help="Exact output size WIDTHxHEIGHT."),
+    preset: str = typer.Option("balanced", "--preset", "-p", help="quality | balanced | fast"),
+    backend: str | None = typer.Option(None, "--backend", help="auto | tensorrt | torch | onnxruntime"),
+    encoder: str | None = typer.Option(None, "--encoder", help="auto or an FFmpeg encoder name."),
+    codec: str | None = typer.Option(None, "--codec", help="hevc | h264 | av1"),
+    quality: int | None = typer.Option(None, "--crf", "--cq", help="Constant-quality value."),
+    ten_bit: bool = typer.Option(False, "--10bit", help="Encode 10-bit output (less banding)."),
+    deinterlace: str | None = typer.Option(None, "--deinterlace", help="auto | on | off"),
+    denoise: str | None = typer.Option(None, "--denoise", help="off | light | medium | strong"),
+    max_vram_gb: float | None = typer.Option(None, "--max-vram-gb", help="Cap VRAM used by inference."),
+    gpus: str | None = typer.Option(None, "--gpus", help="Comma-separated GPU indices, e.g. 0,1"),
+    tile_size: int | None = typer.Option(None, "--tile-size"),
+    tile_overlap: int | None = typer.Option(None, "--tile-overlap"),
+    batch_size: int | None = typer.Option(None, "--batch-size"),
+    chunk_frames: int | None = typer.Option(None, "--chunk-frames"),
+    resume: bool = typer.Option(False, "--resume", help="Continue an interrupted job."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-y", help="Replace an existing output."),
+    keep_work: bool = typer.Option(False, "--keep-work", help="Keep intermediate segments."),
+) -> None:
+    """Upscale a video (default target: 4K, aspect ratio preserved)."""
+    state = _state(ctx)
+    try:
+        spec = JobSpec(
+            input=input_path,
+            output=output,
+            model=model,
+            target=_target(target, scale, target_height, size),
+            preset=preset,
+            backend=backend,
+            encoder=encoder,
+            codec=codec,
+            quality=quality,
+            ten_bit=True if ten_bit else None,
+            deinterlace=deinterlace,
+            denoise=denoise,
+            max_vram_gb=max_vram_gb,
+            gpus=[int(g) for g in gpus.split(",")] if gpus else None,
+            tile_size=tile_size,
+            tile_overlap=tile_overlap,
+            batch_size=batch_size,
+            chunk_frames=chunk_frames,
+            resume=resume,
+            overwrite=overwrite,
+            keep_work_dir=True if keep_work else None,
+        )
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+
+    progress = Progress(
+        TextColumn("[bold]{task.fields[state]:<9}"),
+        BarColumn(),
+        TaskProgressColumn(),
+        TextColumn("{task.completed:.0f}/{task.total:.0f} frames"),
+        TextColumn("[cyan]{task.fields[fps]:.1f} fps"),
+        TimeRemainingColumn(),
+        TextColumn("[dim]{task.fields[stages]}"),
+        console=console,
+        transient=False,
+    )
+    task = progress.add_task("job", total=1, state="starting", fps=0.0, stages="")
+
+    def on_progress(event: ProgressEvent) -> None:
+        stages = " ".join(f"{s.name[:3]}:{s.busy_fps:.0f}" for s in event.stages)
+        progress.update(
+            task,
+            total=max(event.frames_total, 1),
+            completed=event.frames_done,
+            state=event.state,
+            fps=event.fps,
+            stages=stages,
+        )
+
+    runner = JobRunner(state.settings, progress=on_progress, on_plan=_print_plan)
+    try:
+        with progress:
+            result = runner.run(spec)
+    except JobCancelled as exc:
+        console.print("[yellow]cancelled[/]: finished chunks were kept; re-run with --resume to continue")
+        _fail(exc)
+        return
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+
+    report = result.report
+    tp = report["throughput"]
+    console.print(
+        f"[bold green]done[/] {result.output} ({report['output']['size']}, {report['output']['frames']} frames) "
+        f"in {report['timings']['total_s']:.1f}s - pipeline {tp['pipeline_fps']} fps, "
+        f"bottleneck: {tp['bottleneck']}"
+    )
+    console.print(f"[dim]report: {result.report_path}[/]")
+
+
+# -------------------------------------------------------------------------------------------------------
+# models
+# -------------------------------------------------------------------------------------------------------
+
+
+@models_app.command("list")
+def models_list(as_json: bool = typer.Option(False, "--json")) -> None:
+    """List registered models."""
+    from neuralframe.models.registry import ModelRegistry
+
+    registry = ModelRegistry.load()
+    if as_json:
+        out.print_json(json.dumps([m.model_dump(mode="json") for m in registry.all()]))
+        return
+    table = Table(title="Models", title_justify="left")
+    for col in ("id", "kind", "scale", "input", "licence", "recommended for"):
+        table.add_column(col)
+    for m in registry.all():
+        table.add_row(m.id, m.kind, f"x{m.scale}", m.input, m.licence, ", ".join(m.recommended_content))
+    console.print(table)
+
+
+def main() -> None:
+    try:
+        app()
+    except KeyboardInterrupt:  # pragma: no cover - interactive
+        console.print("[yellow]interrupted[/]")
+        sys.exit(130)
+
+
+if __name__ == "__main__":  # pragma: no cover
+    main()

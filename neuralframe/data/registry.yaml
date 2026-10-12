@@ -1,0 +1,25 @@
+# NeuralFrame model registry.
+#
+# kind:         classical (resampling only) | sr (super-resolution network) | interpolation (frame generation)
+# input:        single (one frame in, one frame out) | window (2r+1 frames → centre frame) | recurrent
+# scale:        native upscale factor of the network (1 for classical models)
+# window:       temporal window size for window/recurrent models (1 for single-frame)
+# weights:      download URL, SHA256 and licence of the weight file (never committed to git)
+# arch/params:  architecture name and constructor arguments for the PyTorch implementation
+
+models:
+  - id: lanczos
+    kind: classical
+    scale: 1
+    resize_kernel: lanczos3
+    description: Lanczos-3 resampling only (no neural network). Baseline and "no-op" upscale.
+    recommended_content: [baseline]
+    licence: n/a
+
+  - id: bicubic
+    kind: classical
+    scale: 1
+    resize_kernel: bicubic
+    description: Bicubic (Catmull-Rom) resampling only. Quality-evaluation baseline.
+    recommended_content: [baseline]
+    licence: n/a

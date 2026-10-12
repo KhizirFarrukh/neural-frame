@@ -26,6 +26,7 @@ dependencies = [
   "rich>=13",
   "structlog>=24.1",
   "nvidia-ml-py>=12.535",
+  "psutil>=5.9",
   "httpx>=0.27",
   "sqlalchemy>=2.0",
   "fastapi>=0.110",
@@ -89,7 +90,7 @@ markers = [
 timeout = 600
 
 [tool.ruff]
-line-length = 110
+line-length = 120
 target-version = "py311"
 extend-exclude = ["build", "native"]
 
@@ -100,6 +101,9 @@ ignore = [
   "N812",   # lowercase imported as non-lowercase (torch.nn.functional as F)
   "RUF012", # mutable class attributes are fine on pydantic/typer models
   "PTH123", # open() is fine
+  "SIM105", # explicit try/except/pass is clearer around process cleanup
+  "SIM108", # if/else blocks over nested ternaries
+  "N818",   # JobCancelled reads better than JobCancelledError
 ]
 
 [tool.ruff.lint.per-file-ignores]
@@ -123,6 +127,9 @@ module = [
   "neuralframe.models.*",
   "neuralframe.config",
   "neuralframe.errors",
+  "neuralframe.colorspace",
+  "neuralframe.log",
+  "neuralframe.monitoring",
 ]
 strict = true
 

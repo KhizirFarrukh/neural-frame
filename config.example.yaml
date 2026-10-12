@@ -1,0 +1,103 @@
+# NeuralFrame configuration example.
+#
+# Copy to ./config.yaml, to %APPDATA%\neuralframe\config.yaml (Windows) or ~/.config/neuralframe/config.yaml,
+# or point NEURALFRAME_CONFIG at it. Every key is optional; omitted keys use the defaults shown here.
+#
+# Precedence (highest first): CLI flags / API fields / GUI controls  >  environment variables  >  this file
+# Environment variables use the NEURALFRAME_ prefix and "__" between levels, e.g.
+#   NEURALFRAME_ENCODE__CODEC=av1   NEURALFRAME_VRAM__MAX_VRAM_GB=6
+
+paths:
+  # Root for everything NeuralFrame caches. Default: %LOCALAPPDATA%\neuralframe (Windows),
+  # ~/.cache/neuralframe (Linux), ~/Library/Caches/neuralframe (macOS).
+  # cache_dir: /data/neuralframe
+  models_dir: null      # downloaded weights + exported ONNX      (default: <cache_dir>/models)
+  engines_dir: null     # TensorRT engines and timing caches       (default: <cache_dir>/engines)
+  work_dir: null        # per-job chunk stores used for resume     (default: <cache_dir>/work)
+  db_path: null         # SQLite job queue for the API / GUI       (default: <cache_dir>/jobs.db)
+
+ffmpeg:
+  ffmpeg: null          # path to ffmpeg; null = search PATH (env NEURALFRAME_FFMPEG also works)
+  ffprobe: null         # path to ffprobe; null = next to ffmpeg, then PATH
+  loglevel: error       # FFmpeg's own log level for decoder/encoder subprocesses
+
+decode:
+  # Hardware decoding. auto picks the first *working* one (NVDEC/cuda, d3d11va, vaapi, ...);
+  # FFmpeg falls back to software automatically if the codec/profile is unsupported.
+  hwaccel: auto         # auto | none | cuda | d3d11va | dxva2 | qsv | vaapi | videotoolbox
+  # auto: trust the container's field_order; if it is missing, run FFmpeg's idet on the first frames.
+  deinterlace: auto     # auto | "on" | "off" (quote on/off: YAML 1.1 reads them as booleans)
+  deinterlace_filter: bwdif   # bwdif (better) | yadif (faster); always one output frame per input frame
+  denoise: "off"        # off | light | medium | strong  (hqdn3d pre-filter before upscaling)
+  deblock: false        # FFmpeg deblock filter for blocky, heavily compressed sources
+
+encode:
+  encoder: auto         # auto = best working encoder for the codec (NVENC > AMF > QSV > VAAPI > software)
+  codec: null           # hevc | h264 | av1 ; null = from preset
+  quality: null         # constant-quality value (CRF / CQ / QP); null = from preset (lower = better)
+  speed: null           # slow | medium | fast ; null = from preset
+  ten_bit: false        # 10-bit output (less banding); HDR input forces 10-bit
+  extra_args: []        # raw FFmpeg encoder arguments appended last, e.g. ["-g", "120"]
+
+color:
+  # auto: HD outputs (>= 720 lines) use BT.709; SD outputs keep the source matrix.
+  matrix: auto          # auto | preserve | bt709
+  # When converting the matrix to BT.709, also convert SD primaries (SMPTE-C / EBU) to BT.709 in linear
+  # light, so the BT.709 tags are truthful. false = keep source primaries and tag them as such.
+  convert_primaries: true
+  output_range: limited # limited | full | preserve
+
+chunking:
+  chunk_frames: 240     # frames per resumable chunk / encoded segment
+  overlap_frames: null  # temporal models only; null = model window radius x 2
+  scene_detection: auto # auto (temporal models) | on | off
+  scene_threshold: 0.35
+  chunk_format: segment # segment (encode each chunk directly) | lossless (FFV1 intermediates)
+
+pipeline:
+  ops: auto             # auto (native C++ if built) | native | numpy (reference implementation)
+  ram_budget_gb: null   # host RAM for inter-stage queues; null = 25% of available, max 4 GB
+  keep_work_dir: false  # keep chunk segments after a successful job
+  verify_sync: true     # fail the job (SYNC_CHECK_FAILED) if frame count / A/V offset checks fail
+
+inference:
+  backend: auto         # auto (TensorRT if available) | tensorrt | torch | onnxruntime
+  precision: fp16       # fp16 | fp32
+  tile_size: null       # input-space tile size in px; null = calibrated from free VRAM
+  tile_overlap: null    # px of overlap between tiles; null = from preset
+  batch_size: null      # frames/tiles per inference call; null = calibrated
+  gpus: null            # e.g. [0, 1]; null = all detected GPUs
+  onnx_providers: null  # ONNX Runtime providers in priority order; null = best available
+  deterministic: true   # deterministic kernels (needed for bit-identical kill-and-resume)
+
+vram:
+  safety_margin: 0.15   # fraction of free VRAM kept unused during calibration
+  max_vram_gb: null     # hard cap, e.g. 4.0 to leave room for other applications
+  calibrate: true       # probe (batch, tile) combinations before the first chunk
+
+api:
+  host: 127.0.0.1       # bind address; keep local unless you know what you are doing
+  port: 8765
+  # Directories API/GUI jobs may read from and write to (default: your home directory). Paths outside
+  # these roots are rejected, which prevents path traversal through the REST API.
+  # input_roots: [/videos/in]
+  # output_roots: [/videos/out]
+  upload_dir: null      # where uploaded files are stored (default: <cache_dir>/uploads)
+  max_upload_gb: 20.0
+
+logging:
+  level: INFO
+  json_output: false    # JSON lines on stderr
+  file: null            # also append JSON logs to this file
+
+# Presets map to model, tile overlap and encoder settings. Built-ins: quality, balanced, fast.
+# Override fields of a built-in or add your own:
+presets:
+  balanced:
+    speed: medium
+  # archive:
+  #   description: Slow, near-transparent AV1 archive copies
+  #   model: realesrgan-x4plus
+  #   codec: av1
+  #   speed: slow
+  #   quality: {av1: 22}
