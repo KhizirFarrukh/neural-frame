@@ -1,0 +1,131 @@
+[build-system]
+requires = ["scikit-build-core>=0.10", "pybind11>=2.13"]
+build-backend = "scikit_build_core.build"
+
+[project]
+name = "neuralframe"
+dynamic = ["version"]
+description = "High-performance local AI video upscaler (FFmpeg + TensorRT/ONNX Runtime/PyTorch)"
+readme = "README.md"
+requires-python = ">=3.11"
+authors = [{ name = "Khizir Farrukh" }]
+keywords = ["video", "super-resolution", "upscaling", "tensorrt", "real-esrgan", "ffmpeg"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: C++",
+  "Topic :: Multimedia :: Video :: Conversion",
+  "Environment :: GPU :: NVIDIA CUDA",
+]
+dependencies = [
+  "numpy>=1.26",
+  "av>=14",
+  "pydantic>=2.7",
+  "pydantic-settings>=2.4",
+  "pyyaml>=6",
+  "typer>=0.12",
+  "rich>=13",
+  "structlog>=24.1",
+  "nvidia-ml-py>=12.535",
+  "httpx>=0.27",
+  "sqlalchemy>=2.0",
+  "fastapi>=0.110",
+  "uvicorn[standard]>=0.29",
+  "python-multipart>=0.0.9",
+]
+
+[project.optional-dependencies]
+# PyTorch backend + ONNX export. Install the CUDA build from the PyTorch index, e.g.
+#   pip install torch --index-url https://download.pytorch.org/whl/cu130
+torch = ["torch>=2.3"]
+onnx = ["onnx>=1.16", "onnxruntime>=1.18"]
+onnx-gpu = ["onnx>=1.16", "onnxruntime-gpu>=1.18"]
+onnx-directml = ["onnx>=1.16", "onnxruntime-directml>=1.18"]
+tensorrt = ["tensorrt-cu13>=10.0,<11"]
+tensorrt-cu12 = ["tensorrt-cu12>=10.0,<11"]
+lpips = ["lpips>=0.1.4"]
+dev = [
+  "pytest>=8",
+  "pytest-benchmark>=4",
+  "pytest-timeout>=2.3",
+  "mypy>=1.10",
+  "ruff>=0.5",
+  "types-PyYAML",
+]
+
+[project.scripts]
+neuralframe = "neuralframe.cli.app:main"
+
+# ---------------------------------------------------------------------------
+# Build (scikit-build-core drives CMake for the native module in native/)
+# ---------------------------------------------------------------------------
+[tool.scikit-build]
+minimum-version = "build-system.requires"
+cmake.version = ">=3.26"
+cmake.build-type = "Release"
+build-dir = "build/{wheel_tag}"
+wheel.packages = ["neuralframe"]
+editable.mode = "redirect"
+sdist.exclude = ["build", "tests/data", "benchmarks/runs"]
+
+[tool.scikit-build.metadata.version]
+provider = "scikit_build_core.metadata.regex"
+input = "neuralframe/__init__.py"
+
+[tool.scikit-build.cmake.define]
+NEURALFRAME_BUILD_TESTS = "OFF"
+
+# ---------------------------------------------------------------------------
+# Tooling
+# ---------------------------------------------------------------------------
+[tool.pytest.ini_options]
+minversion = "8.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+  "gpu: requires a CUDA-capable GPU (run locally)",
+  "network: downloads model weights",
+  "slow: long-running integration test",
+]
+timeout = 600
+
+[tool.ruff]
+line-length = 110
+target-version = "py311"
+extend-exclude = ["build", "native"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "SIM", "RUF", "PTH", "N"]
+ignore = [
+  "B008",   # Typer/FastAPI use function calls in defaults by design
+  "N812",   # lowercase imported as non-lowercase (torch.nn.functional as F)
+  "RUF012", # mutable class attributes are fine on pydantic/typer models
+  "PTH123", # open() is fine
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["N802", "N803", "N806"]
+
+[tool.mypy]
+python_version = "3.11"
+warn_unused_configs = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+plugins = ["pydantic.mypy"]
+exclude = ["^build/", "^benchmarks/runs/"]
+
+[[tool.mypy.overrides]]
+module = [
+  "neuralframe.core.*",
+  "neuralframe.io.*",
+  "neuralframe.chunking.*",
+  "neuralframe.inference.*",
+  "neuralframe.ops.*",
+  "neuralframe.models.*",
+  "neuralframe.config",
+  "neuralframe.errors",
+]
+strict = true
+
+[[tool.mypy.overrides]]
+module = ["av.*", "tensorrt.*", "pynvml.*", "onnxruntime.*", "onnx.*", "lpips.*", "torchvision.*"]
+ignore_missing_imports = true
