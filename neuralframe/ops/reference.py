@@ -320,3 +320,13 @@ def resize(img: F32, out_h: int, out_w: int, kernel: str = "lanczos3") -> F32:
     """Resize a planar ``(C, H, W)`` float32 image (horizontal pass first, then vertical)."""
     out = _resample_axis(img.astype(np.float32, copy=False), out_w, axis=img.ndim - 1, kernel=kernel)
     return _resample_axis(out, out_h, axis=img.ndim - 2, kernel=kernel)
+
+
+# ---------------------------------------------------------------------------------------------------------
+# Temporal blending
+# ---------------------------------------------------------------------------------------------------------
+
+
+def temporal_blend(a: F32, b: F32, weight_a: float) -> F32:
+    """Cross-fade two frames: ``a * w + b * (1 - w)`` (weights rounded to float32 like the native op)."""
+    return _f32(a * np.float32(weight_a) + b * np.float32(1.0 - weight_a))

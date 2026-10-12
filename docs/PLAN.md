@@ -174,11 +174,14 @@ desktop GUI application.
 - [x] Tests: tile layout/merge (no-seam test vs whole-frame), tiny random model E2E on CPU, image E2E
 
 ### M3 — Native module
-- [ ] C++17 ops: YUV↔RGB, Lanczos resize, feather tile merge, temporal blend, pinned ring buffer
-      (blocking acquire/release, GIL released while waiting); OpenMP/std::thread parallelism
-- [ ] Optional CUDA kernels (built only when nvcc is found)
-- [ ] GoogleTest C++ tests via CTest
-- [ ] Parity tests native vs NumPy (≤ 1 LSB at 8-bit); pytest-benchmark speed-up numbers
+- [x] C++17 ops: YUV↔RGB, Lanczos resize, feather tile merge, temporal blend, pinned ring buffer
+      (blocking acquire/release, GIL released while waiting); persistent thread pool
+- [x] ~~Optional CUDA kernels~~ → GPU-side ops are PyTorch tensor ops (`ops/torch_ops.py`), parity-tested
+      on CUDA; no CUDA toolkit is needed to build (none is installed here to verify hand-written kernels)
+- [x] GoogleTest C++ tests via CTest (14 tests)
+- [x] Parity tests native vs NumPy: **bit-identical** (stricter than the ≤ 1 LSB requirement); speed-up
+      19–34× per op, Lanczos 1080p pipeline 2.9 → 45 fps in host mode (`benchmarks/results/ops-*.md`)
+- [ ] Ring buffer wired into decode → GPU upload (moved to M4 together with CUDA-stream overlap)
 
 ### M4 — TensorRT + hardware I/O
 - [ ] ONNX export (opset ≥ 17, dynamic batch/H/W) + parity check (max abs diff, PSNR)
