@@ -9,7 +9,7 @@ from typing import Any
 import pytest
 
 from neuralframe.config import Settings
-from neuralframe.core.job import JobRunner, JobSpec, ProgressEvent
+from neuralframe.core.job import JobRunner, JobSpec
 from neuralframe.core.planning import TargetSpec
 from neuralframe.errors import JobCancelled
 from neuralframe.io.ffmpeg import FFmpegTools
@@ -171,18 +171,19 @@ def _kill_and_resume(
     resumed_out = tmp_path / "resumed.mkv"
     runner = JobRunner(settings, capabilities=caps)
 
-    def stop_after_two_chunks(event: ProgressEvent) -> None:
-        if event.state == "running" and event.frames_done >= 32:
+    def stop_after_two_chunks(chunk_id: int, _total: int) -> None:
+        if chunk_id == 1:  # chunks 0 and 1 are committed; the process "dies" now
             runner.cancel.cancel("simulated kill")
 
-    runner.progress = stop_after_two_chunks
+    runner.on_chunk_done = stop_after_two_chunks
     with pytest.raises(JobCancelled):
         runner.run(JobSpec(output=resumed_out, model="lanczos", overwrite=True, **common))
     assert not resumed_out.exists()
 
     report = run_job(settings, caps, output=resumed_out, resume=True, **common)
-    assert report["throughput"]["frames_resumed"] >= 32
-    assert report["throughput"]["frames_processed_this_run"] < 60
+    assert report["throughput"]["resume"]["mode"] == "seek"
+    assert report["throughput"]["frames_resumed"] == 32
+    assert report["throughput"]["frames_processed_this_run"] == 28
     assert ffhelpers.frame_md5s(resumed_out) == ffhelpers.frame_md5s(reference)
 
 

@@ -13,7 +13,7 @@ import numpy.typing as npt
 from neuralframe.chunking.planner import Chunk, ChunkPlan
 from neuralframe.chunking.store import ChunkStore
 from neuralframe.colorspace import ColorPlan, ColorRange
-from neuralframe.core.runtime import CancelToken, Frame, Stage, StageQueue
+from neuralframe.core.runtime import CancelToken, Frame, InFlightLimiter, Stage, StageQueue
 from neuralframe.errors import ErrorCode, NeuralFrameError
 from neuralframe.inference.processor import BatchProcessor
 from neuralframe.io.decoder import DecodedFrame
@@ -34,11 +34,13 @@ class DecodeStage(Stage):
         out: StageQueue[Frame[RawArray]],
         *,
         skip: Callable[[int], bool] | None = None,
+        limiter: InFlightLimiter | None = None,
     ) -> None:
         super().__init__("decode", cancel)
         self._frames = frames
         self._out = out
         self._skip = skip
+        self._limiter = limiter
 
     def run(self) -> None:
         it = iter(self._frames)
@@ -50,6 +52,8 @@ class DecodeStage(Stage):
                 break
             if self._skip is not None and self._skip(decoded.index):
                 continue
+            if self._limiter is not None:
+                self._limiter.acquire()
             self._out.put(Frame(decoded.index, decoded.pts, decoded.duration, decoded.data))
             self.metrics.frames += 1
         self._out.close()
@@ -109,8 +113,9 @@ class ProcessStage(Stage):
         out: StageQueue[Frame[Any]],
         *,
         processor: BatchProcessor,
+        name: str = "inference",
     ) -> None:
-        super().__init__("inference", cancel)
+        super().__init__(name, cancel)
         self._in, self._out = inq, out
         self.processor = processor
 
@@ -192,6 +197,7 @@ class EncodeStage(Stage):
         first_index: int = 0,
         done_chunks: set[int] | None = None,
         on_chunk_done: Callable[[Chunk, int], None] | None = None,
+        limiter: InFlightLimiter | None = None,
     ) -> None:
         super().__init__("encode", cancel)
         self._in = inq
@@ -201,6 +207,7 @@ class EncodeStage(Stage):
         self._next = first_index
         self._done = frozenset(done_chunks or ())
         self._on_chunk_done = on_chunk_done
+        self._limiter = limiter
         self._encoder: SegmentEncoder | None = None
         self._chunk: Chunk | None = None
         self._chunk_start = 0
@@ -232,6 +239,8 @@ class EncodeStage(Stage):
         with self.timed():
             self._encoder.write(frame.pts, frame.duration, frame.data)
         self.metrics.frames += 1
+        if self._limiter is not None:
+            self._limiter.release()
 
     def _skip_completed(self) -> None:
         """When resuming, jump the expected index over chunks that are already in the store."""

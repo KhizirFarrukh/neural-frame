@@ -77,3 +77,26 @@ models:
       sha256: b8a8376811077954d82ca3fcf476f1ac3da3e8a68a4f4d71363008000a18b75d
       filename: realesr-animevideov3.pth
       size_bytes: 2504012
+
+  - id: realbasicvsr-x4
+    kind: sr
+    scale: 4
+    input: recurrent
+    window: 9
+    architecture: realbasicvsr
+    params: {mid_channels: 64, num_propagation_blocks: 20, num_cleaning_blocks: 20, dynamic_refine_thres: 255}
+    pad_multiple: 4
+    state_dict_key: state_dict
+    state_dict_prefix: generator_ema.
+    description: >-
+      RealBasicVSR (temporal). Cleans each frame, then propagates features bidirectionally across the chunk
+      with optical flow; best temporal stability on real-world degraded video. PyTorch backend only.
+    recommended_content: [live-action, real-world video]
+    source_url: https://github.com/ckkelvinchan/RealBasicVSR
+    licence: Apache-2.0
+    licence_url: https://github.com/ckkelvinchan/RealBasicVSR/blob/master/LICENSE
+    weights:
+      url: https://download.openmmlab.com/mmediting/restorers/real_basicvsr/realbasicvsr_c64b20_1x30x8_lr5e-5_150k_reds_20211104-52f77c2c.pth
+      sha256: 52f77c2c835aaa3fe675b3959b2f85010a6c6f63f77f7e279394646e55a4e376
+      filename: realbasicvsr_c64b20_1x30x8_lr5e-5_150k_reds_20211104-52f77c2c.pth
+      size_bytes: 148239017

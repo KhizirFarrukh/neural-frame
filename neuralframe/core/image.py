@@ -128,7 +128,7 @@ def run_image_job(runner: JobRunner, spec: JobSpec, tools: FFmpegTools, media: M
 
         from neuralframe.ops import torch_ops
 
-        model_runner = runner._model_runner_for(model, weights, inference, geometry)
+        model_runner, inference = runner._calibrated_runner(model, weights, inference, geometry, calibrate=False)
         try:
             x = torch.from_numpy(rgb[None]).to(model_runner.device)
             for _ in range(geometry.model_passes):

@@ -123,9 +123,9 @@ class _GpuStage(Stage):
 class UploadStage(_GpuStage):
     def __init__(
         self, cancel: CancelToken, inq: StageQueue[Frame[RawArray]], out: StageQueue[GpuBatch], *,
-        device: torch.device, fmt: RawVideoFormat, color: ColorPlan, frames_per_call: int,
+        device: torch.device, fmt: RawVideoFormat, color: ColorPlan, frames_per_call: int, suffix: str = "",
     ) -> None:
-        super().__init__("upload", cancel, device)
+        super().__init__("upload" + suffix, cancel, device)
         self._in, self._out = inq, out
         self.fmt, self.color = fmt, color
         self.batch = max(1, frames_per_call)
@@ -187,9 +187,9 @@ class UploadStage(_GpuStage):
 class InferStage(_GpuStage):
     def __init__(
         self, cancel: CancelToken, inq: StageQueue[GpuBatch], out: StageQueue[GpuBatch], *,
-        device: torch.device, runner: ModelRunner | None, passes: int,
+        device: torch.device, runner: ModelRunner | None, passes: int, suffix: str = "",
     ) -> None:
-        super().__init__("inference", cancel, device)
+        super().__init__("inference" + suffix, cancel, device)
         self._in, self._out = inq, out
         self.runner = runner
         self.passes = passes if runner is not None else 0
@@ -212,8 +212,9 @@ class DownloadStage(_GpuStage):
     def __init__(
         self, cancel: CancelToken, inq: StageQueue[GpuBatch], out: StageQueue[Frame[RawArray]], *,
         device: torch.device, fmt: RawVideoFormat, color: ColorPlan, kernel: str, frames_per_call: int,
+        suffix: str = "",
     ) -> None:
-        super().__init__("postprocess", cancel, device)
+        super().__init__("postprocess" + suffix, cancel, device)
         self._in, self._out = inq, out
         self.fmt, self.color, self.kernel = fmt, color, kernel
         self.pool = PinnedPool(slots=2, slot_bytes=fmt.frame_bytes * max(1, frames_per_call))

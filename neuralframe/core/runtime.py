@@ -66,11 +66,13 @@ _END = _End()
 class StageQueue(Generic[T]):
     """Bounded FIFO between stages (backpressure) that aborts promptly on cancellation."""
 
-    def __init__(self, name: str, maxsize: int, cancel: CancelToken) -> None:
+    def __init__(self, name: str, maxsize: int, cancel: CancelToken, *, producers: int = 1) -> None:
         self.name = name
         self.maxsize = maxsize
         self._q: queue.Queue[T | _End] = queue.Queue(maxsize=maxsize)
         self._cancel = cancel
+        self._producers = producers
+        self._producer_lock = threading.Lock()
         self.put_wait_s = 0.0
         self.get_wait_s = 0.0
         self.max_depth = 0
@@ -104,11 +106,36 @@ class StageQueue(Generic[T]):
         return item
 
     def close(self) -> None:
-        self.put(_END)
+        """Signal end of stream; with several producers the end is sent when the last one closes."""
+        with self._producer_lock:
+            self._producers -= 1
+            last = self._producers <= 0
+        if last:
+            self.put(_END)
 
     @property
     def depth(self) -> int:
         return self._q.qsize()
+
+
+class InFlightLimiter:
+    """Caps frames between the decoder and the encoder.
+
+    With several inference workers the encoder must reorder frames; without a cap a slow worker holding
+    an early frame would let the reorder buffer grow without bound.
+    """
+
+    def __init__(self, capacity: int, cancel: CancelToken) -> None:
+        self.capacity = max(1, capacity)
+        self._sem = threading.Semaphore(self.capacity)
+        self._cancel = cancel
+
+    def acquire(self) -> None:
+        while not self._sem.acquire(timeout=_POLL_S):
+            self._cancel.raise_if_cancelled()
+
+    def release(self) -> None:
+        self._sem.release()
 
 
 @dataclass

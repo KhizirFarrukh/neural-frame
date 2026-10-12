@@ -33,23 +33,40 @@ class InferencePlan:
     frames_per_call: int
     budget_mb: int
     notes: tuple[str, ...] = field(default_factory=tuple)
+    devices: tuple[str, ...] = ()
+    """One inference worker per entry (queue pull); defaults to just ``device``."""
+    temporal_frames: int | None = None
+    """Sequence models: most frames (chunk + overlap) that fit on the device at once."""
+    strip_rows: int | None = None
+    """Sequence models: low-res rows per strip of the 4x upsampling head."""
+
+    @property
+    def workers(self) -> tuple[str, ...]:
+        return self.devices or (self.device,)
 
     def summary(self) -> dict[str, object]:
         return {
             "backend": self.backend,
             "device": self.device,
+            "devices": list(self.workers),
             "precision": self.precision,
             "tile": self.tile,
             "tile_overlap": self.overlap,
             "batch": self.batch,
             "frames_per_call": self.frames_per_call,
             "budget_mb": self.budget_mb,
+            "temporal_frames": self.temporal_frames,
+            "strip_rows": self.strip_rows,
             "notes": list(self.notes),
         }
 
 
 def torch_cuda_available() -> bool:
     return bool(torch.cuda.is_available())
+
+
+def torch_cuda_device_count() -> int:
+    return int(torch.cuda.device_count()) if torch_cuda_available() else 0
 
 
 def resolve_device(gpus: list[int] | None, *, force_cpu: bool = False) -> torch.device:
@@ -182,3 +199,49 @@ def plan_inference(
         budget_mb=budget // 2**20,
         notes=tuple(notes),
     )
+
+
+# Sequence models keep per-frame low-res state for the whole chunk (BasicVSR: 64-channel backward features,
+# flows, cleaned inputs ≈ 150 B per low-res pixel in FP16) plus per-frame transients (≈ 600 B/px) and the
+# strip-wise 4x head (bounded to ~512 MB).
+_SEQ_STATE_BYTES = 150
+_SEQ_TRANSIENT_BYTES = 600
+_SEQ_HEAD_BUDGET = 512 * 2**20
+_SEQ_HEAD_BYTES_PER_PX = 5 * 1024
+
+
+def plan_temporal(
+    model: ModelSpec,
+    frame_hw: tuple[int, int],
+    *,
+    device: torch.device,
+    precision: str,
+    capacity_bytes: int,
+    requested_backend: str,
+) -> InferencePlan:
+    """Plan a sequence model. ``capacity_bytes`` should be stable across runs (total, not free, memory)
+    because the chunk length derived from it is part of the job fingerprint."""
+    h, w = frame_hw
+    eff = "fp32" if device.type == "cpu" else precision
+    factor = 1 if eff == "fp16" else 2
+    weights = (model.weights.size_bytes or 0) if model.weights else 0
+    usable = capacity_bytes - weights - _SEQ_HEAD_BUDGET - _SEQ_TRANSIENT_BYTES * factor * h * w
+    frames = max(4, int(usable // max(_SEQ_STATE_BYTES * factor * h * w, 1)))
+    strip_rows = max(8, int(_SEQ_HEAD_BUDGET // (_SEQ_HEAD_BYTES_PER_PX * factor * w)))
+    notes = []
+    if requested_backend not in ("auto", "torch"):
+        notes.append(f"{model.id} is a sequence model; only the torch backend supports it")
+    return InferencePlan(
+        backend="torch", device=str(device), precision=eff, tile=None, overlap=0, batch=1, frames_per_call=1,
+        budget_mb=capacity_bytes // 2**20, notes=tuple(notes), devices=(str(device),),
+        temporal_frames=frames, strip_rows=strip_rows if strip_rows < h else None,
+    )
+
+
+def device_capacity(device: torch.device, *, safety_margin: float, max_vram_gb: float | None) -> int:
+    """Total (not currently free) memory budget — stable across runs."""
+    if device.type == "cuda":
+        total = int(torch.cuda.get_device_properties(device).total_memory * (1.0 - safety_margin))
+        return min(total, int(max_vram_gb * 2**30)) if max_vram_gb else total
+    total_ram, _ = host_memory()
+    return int(total_ram * 0.5)

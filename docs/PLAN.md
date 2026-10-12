@@ -154,6 +154,20 @@ desktop GUI application.
 - Hardware encoders can pass a 320×240 capability probe yet fail on the real job (size/session limits),
   so planning runs a 2-frame preflight with the real settings before the fingerprint is fixed.
 
+### Findings from Milestone 5
+
+- Thumbnail analysis (64x36 through the same filter chain) finds scene cuts with a histogram + motion
+  test: the reference clip's cut at frame 150 scores 0.51 against <= 0.06 for motion-only frames.
+- Resume seeks to just before the last committed frame and skips by exact PTS (frames are delivered in
+  index order, so finished chunks always form a prefix); temporal denoise filters fall back to decoding
+  from the start because their state would differ after a seek.
+- OOM ladder: batch halvings (always converge) do not count against the three tile-reduction levels;
+  calibration pins batch/tile in the manifest so resumed chunks are bit-identical.
+- RealBasicVSR in FP16 with SPyNet kept in FP32: 49.8 dB vs FP32 (44.7 dB all-FP16) at the same speed;
+  the 4x head runs in strips with a 4-row halo to bound memory (matches whole-frame within 1e-4).
+- Temporal chunks cross-fade over `overlap` frames at non-cut boundaries; a resumed job re-runs the last
+  finished chunk without emitting it to rebuild the shared blend zone, keeping output bit-identical.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -204,14 +218,14 @@ desktop GUI application.
 - [x] CUDA-stream overlap (upload / compute / download) with measured before/after
 
 ### M5 — Chunking, VRAM manager, resume
-- [ ] Scene detection (scdet / histogram) + chunk planner (pts ranges, scene alignment, overlap)
-- [ ] Chunk store + manifest + resume verification; cancellation leaves resumable state
-- [ ] VRAM calibration (batch × tile search, safety margin, `--max-vram-gb`, cached per model/GPU/res)
-- [ ] OOM recovery ladder (halve batch → halve tile → next backend) without losing finished work
-- [ ] Temporal model path: padded chunks, edge replication, boundary cross-fade segments
-- [ ] Stretch: one temporal SR model (RealBasicVSR- or AnimeSR-family)
-- [ ] Multi-GPU chunk scheduling (queue pull)
-- [ ] Tests: planner, simulated OOM, kill-and-resume identical frame checksums
+- [x] Scene detection (scdet / histogram) + chunk planner (pts ranges, scene alignment, overlap)
+- [x] Chunk store + manifest + resume verification; cancellation leaves resumable state
+- [x] VRAM calibration (batch × tile search, safety margin, `--max-vram-gb`, cached per model/GPU/res)
+- [x] OOM recovery ladder (halve batch → halve tile → next backend) without losing finished work
+- [x] Temporal model path: padded chunks, edge replication, boundary cross-fade segments
+- [x] Stretch: one temporal SR model (RealBasicVSR- or AnimeSR-family)
+- [x] Multi-GPU chunk scheduling (queue pull)
+- [x] Tests: planner, simulated OOM, kill-and-resume identical frame checksums
 
 ### M6 — Frame generation
 - [ ] Analysis pass shared with scene detection: per-pair timestamp delta, downscaled-luma difference,

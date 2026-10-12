@@ -125,6 +125,7 @@ class ChunkingConfig(_Section):
 
     _switches = field_validator("scene_detection", mode="before")(_yaml_switch)
     scene_threshold: float = Field(default=0.35, gt=0, lt=1)
+    temporal_chunk_frames: int = Field(default=48, ge=8)
     chunk_format: Literal["segment", "lossless"] = "segment"
 
 

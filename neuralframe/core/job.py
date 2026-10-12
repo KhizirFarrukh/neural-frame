@@ -11,13 +11,15 @@ import time
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from fractions import Fraction
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from neuralframe import __version__
-from neuralframe.chunking.planner import ChunkPlan, plan_fixed_chunks
+from neuralframe.chunking.analysis import FrameAnalysis, analyse
+from neuralframe.chunking.planner import ChunkPlan, plan_chunks
 from neuralframe.chunking.store import ChunkStore
 from neuralframe.config import Codec, Settings, Speed
 from neuralframe.core.planning import (
@@ -28,7 +30,7 @@ from neuralframe.core.planning import (
     plan_encoder,
     plan_geometry,
 )
-from neuralframe.core.runtime import CancelToken, StageQueue, StageRunner
+from neuralframe.core.runtime import CancelToken, InFlightLimiter, StageQueue, StageRunner
 from neuralframe.core.stages import DecodeStage, EncodeStage, PostprocessStage, PreprocessStage, ProcessStage
 from neuralframe.errors import ErrorCode, JobCancelled, NeuralFrameError
 from neuralframe.inference.processor import BatchProcessor, IdentityProcessor
@@ -156,6 +158,7 @@ class JobPlan:
     mode: Literal["device", "host"] = "host"
     inference: InferencePlan | None = None
     weights: Path | None = None
+    temporal_overlap: int = 0
 
     @property
     def total_frames(self) -> int:
@@ -241,9 +244,11 @@ class JobRunner:
         registry: ModelRegistry | None = None,
         capabilities: Capabilities | None = None,
         on_plan: Callable[[JobPlan], None] | None = None,
+        on_chunk_done: Callable[[int, int], None] | None = None,
     ) -> None:
         self.settings = settings
         self.on_plan = on_plan
+        self.on_chunk_done = on_chunk_done
         self.job_id = job_id or uuid.uuid4().hex[:12]
         self.progress = progress
         self.cancel = cancel or CancelToken()
@@ -261,6 +266,10 @@ class JobRunner:
         self._pipeline_t0: float | None = None
         self._fallbacks: list[str] = []
         self._decoder: ResilientDecoder | None = None
+        self._analysis: FrameAnalysis | None = None
+        self._adaptations: list[dict[str, Any]] = []
+        self._calibration: dict[str, Any] | None = None
+        self._resume_info: dict[str, Any] = {"mode": "fresh"}
 
     # ---- progress ------------------------------------------------------------------------------------
 
@@ -399,11 +408,27 @@ class JobRunner:
         mux = plan_mux(media, spec.output)
         notes += list(mux.warnings)
 
-        chunk_frames = spec.chunk_frames or settings.chunking.chunk_frames
-        chunks = plan_fixed_chunks(timeline.frame_count, chunk_frames)
         ops = get_ops(settings.pipeline.ops).name
         mode = self.choose_mode(model)
         inference, weights = self.plan_model(spec, model, geometry, mode, notes)
+
+        chunk_frames = spec.chunk_frames or settings.chunking.chunk_frames
+        analysis = None
+        if self.needs_analysis(model):
+            analysis = self.run_analysis(spec, tools, media, decode)
+        total_frames = analysis.frames if analysis is not None else timeline.frame_count
+        cuts = analysis.scene_cuts(settings.chunking.scene_threshold) if analysis is not None else []
+        temporal_overlap = 0
+        if model.is_temporal:
+            configured = settings.chunking.overlap_frames
+            temporal_overlap = model.default_overlap if configured is None else configured
+            # A chunk plus its overlap on both sides must fit on the device at once.
+            fit = (inference.temporal_frames or 64) - 2 * temporal_overlap if inference else 48
+            chunk_frames = max(8, min(chunk_frames, settings.chunking.temporal_chunk_frames, fit))
+            notes.append(f"temporal chunks of {chunk_frames} frames, {temporal_overlap} frames of overlap")
+        chunks = plan_chunks(total_frames, chunk_frames, scene_cuts=cuts, force_cut_boundaries=model.is_temporal)
+        if cuts:
+            notes.append(f"scene cuts at frames {cuts[:12]}{' ...' if len(cuts) > 12 else ''}")
 
         stat = spec.input.stat()
         essentials = {
@@ -415,7 +440,7 @@ class JobRunner:
             "color": encoder.color.summary(),
             "decode": [decode.hwaccel is not None, list(decode.filters), decode.fmt.pix_fmt],
             "encoder": encoder.codec_args(),
-            "chunks": [chunks.chunk_frames, chunks.total_frames],
+            "chunks": [chunks.chunk_frames, chunks.total_frames, temporal_overlap],
             "tiles": [spec.tile_size, spec.tile_overlap],
             # Auto-chosen tile sizes depend on free VRAM at start time; they are pinned in the manifest on
             # first run and reused on resume instead of being part of the fingerprint.
@@ -430,8 +455,27 @@ class JobRunner:
             geometry=geometry, decode=decode, encoder=encoder, out_fmt=out_fmt, mux=mux, chunks=chunks,
             ops=ops, resize_kernel=model.resize_kernel if model.is_classical else "lanczos3",
             work_dir=settings.paths.work() / job_key, notes=notes, mode=mode, inference=inference,
-            weights=weights,
+            weights=weights, temporal_overlap=temporal_overlap,
         )
+
+    def needs_analysis(self, model: ModelSpec) -> bool:
+        mode = self.settings.chunking.scene_detection
+        return mode == "on" or (mode == "auto" and model.is_temporal)
+
+    def run_analysis(
+        self, spec: JobSpec, tools: FFmpegTools, media: MediaInfo, decode: DecodePlan
+    ) -> FrameAnalysis:
+        """Thumbnail analysis pass (scene cuts, motion, timestamps), cached per input + filter chain."""
+        stat = spec.input.stat()
+        key = hashlib.sha256(json.dumps(
+            [str(spec.input.resolve()), stat.st_size, stat.st_mtime_ns, list(decode.filters), __version__]
+        ).encode()).hexdigest()[:16]
+        cache = self.settings.paths.cache_dir / "analysis" / f"{key}.npz"
+        self._emit("planning", "analysing scenes and motion")
+        result = analyse(tools, spec.input, media.require_video().index, decode, cache=cache,
+                         loglevel=self.settings.ffmpeg.loglevel)
+        self._analysis = result
+        return result
 
     def choose_mode(self, model: ModelSpec) -> Literal["device", "host"]:
         requested = self.settings.pipeline.mode
@@ -475,6 +519,7 @@ class JobRunner:
             resolve_backend_name,
             resolve_device,
             torch_cuda_available,
+            torch_cuda_device_count,
         )
         from neuralframe.models.download import ensure_weights
 
@@ -495,6 +540,20 @@ class JobRunner:
             safety_margin=settings.vram.safety_margin,
             max_vram_gb=spec.max_vram_gb or settings.vram.max_vram_gb,
         )
+        if model.is_temporal:
+            from neuralframe.inference.factory import device_capacity, plan_temporal
+
+            capacity = device_capacity(device, safety_margin=settings.vram.safety_margin,
+                                       max_vram_gb=spec.max_vram_gb or settings.vram.max_vram_gb)
+            inference = plan_temporal(
+                model, (geometry.decoded_height, geometry.decoded_width), device=device,
+                precision=settings.inference.precision, capacity_bytes=capacity,
+                requested_backend=spec.backend or settings.inference.backend,
+            )
+            notes += list(inference.notes)
+            notes.append(f"temporal inference: torch on {device} ({inference.precision}), up to "
+                          f"{inference.temporal_frames} frames per sequence")
+            return inference, weights
         preset = settings.preset(spec.preset)
         overlap = spec.tile_overlap
         if overlap is None:
@@ -509,6 +568,16 @@ class JobRunner:
             budget_bytes=budget, tile=spec.tile_size or settings.inference.tile_size, overlap=overlap,
             batch=spec.batch_size or settings.inference.batch_size,
         )
+        devices: tuple[str, ...] = (str(device),)
+        if device.type == "cuda" and not model.is_temporal:
+            gpus = spec.gpus or settings.inference.gpus
+            if gpus:
+                devices = tuple(str(resolve_device([g])) for g in gpus)
+            else:
+                devices = tuple(f"cuda:{i}" for i in range(torch_cuda_device_count()))
+        inference = dataclasses.replace(inference, devices=devices)
+        if len(devices) > 1:
+            notes.append(f"{len(devices)} inference workers pulling from one queue: {', '.join(devices)}")
         notes += list(inference.notes)
         notes.append(
             f"inference: {backend} on {device} ({inference.precision}), "
@@ -519,9 +588,56 @@ class JobRunner:
 
     # ---- execution -----------------------------------------------------------------------------------
 
-    def _model_runner(self, plan: JobPlan) -> Any:
+    def _model_runner(self, plan: JobPlan, *, calibrate: bool = True) -> Any:
         assert plan.inference is not None and plan.weights is not None
-        return self._model_runner_for(plan.model, plan.weights, plan.inference, plan.geometry)
+        runner, plan.inference = self._calibrated_runner(
+            plan.model, plan.weights, plan.inference, plan.geometry, calibrate=calibrate
+        )
+        return runner
+
+    def _calibrated_runner(
+        self, model: ModelSpec, weights: Path | None, inf: InferencePlan, geometry: Geometry, *, calibrate: bool
+    ) -> tuple[Any, InferencePlan]:
+        """Runner with OOM recovery; calibrated on a dry run, falling back to other backends/devices if
+        even the smallest configuration does not fit (``inference.backend: auto``)."""
+        attempts: list[InferencePlan] = [inf]
+        if self.settings.inference.backend == "auto":
+            if inf.backend != "torch":
+                attempts.append(dataclasses.replace(inf, backend="torch"))
+            if inf.device != "cpu":
+                attempts.append(dataclasses.replace(
+                    inf, backend="torch", device="cpu", precision="fp32", batch=1, frames_per_call=1,
+                    tile=inf.tile or 256, overlap=inf.overlap or 16,
+                ))
+        last_error: NeuralFrameError | None = None
+        for candidate in attempts:
+            runner = self._model_runner_for(model, weights, candidate, geometry)
+            vram = runner.enable_recovery(max_levels=3, on_adapt=lambda a: self._adaptations.append(a.as_dict()))
+            if not (calibrate and self.settings.vram.calibrate and runner.device.type == "cuda"):
+                return runner, candidate
+            m = max(model.pad_multiple, 1)
+            hw = (-(-geometry.decoded_height // m) * m, -(-geometry.decoded_width // m) * m)
+            try:
+                self._emit("planning", "calibrating VRAM")
+                result = vram.calibrate(
+                    hw, frames=candidate.frames_per_call, safety_margin=self.settings.vram.safety_margin
+                )
+            except NeuralFrameError as exc:
+                if exc.code is not ErrorCode.OOM_UNRECOVERABLE:
+                    raise
+                last_error = exc
+                runner.backend.close()
+                self._fallbacks.append(f"{candidate.backend} on {candidate.device} ran out of memory; trying next")
+                continue
+            self._calibration = result
+            tuned = dataclasses.replace(candidate, batch=runner.batch, tile=runner.tile, overlap=runner.overlap)
+            if runner.tile is not None:
+                tuned = dataclasses.replace(tuned, frames_per_call=1)
+            else:
+                tuned = dataclasses.replace(tuned, frames_per_call=min(candidate.frames_per_call, runner.batch))
+            return runner, tuned
+        assert last_error is not None
+        raise last_error
 
     def _model_runner_for(
         self, model: ModelSpec, weights: Path | None, inf: InferencePlan, geometry: Geometry
@@ -577,27 +693,48 @@ class JobRunner:
             h, w = h * model.scale, w * model.scale
         opt = shapes[0]
         max_hw = (max(s[0] for s in shapes), max(s[1] for s in shapes))
-        min_hw = (min(s[0] for s in shapes), min(s[1] for s in shapes))
+        # Allow tiles down to 64 px so the OOM ladder can shrink tiles without rebuilding engines.
+        min_hw = (min(64, *(s[0] for s in shapes)), min(64, *(s[1] for s in shapes)))
         return ShapeProfile(min_hw=min_hw, opt_hw=opt, max_hw=max_hw, max_batch=inf.batch, opt_batch=inf.batch)
 
-    def create_processor(self, plan: JobPlan) -> BatchProcessor:
+    def create_processors(self, plan: JobPlan, *, calibrate: bool = True) -> list[BatchProcessor]:
+        """One processor per inference worker; the first calibrates, the others reuse its settings."""
+        first = self.create_processor(plan, calibrate=calibrate)
+        if plan.mode != "device" or plan.inference is None or len(plan.inference.workers) <= 1:
+            return [first]
+        processors = [first]
+        base = plan.inference
+        for device in base.workers[1:]:
+            worker_plan = dataclasses.replace(plan, inference=dataclasses.replace(base, device=device))
+            processors.append(self.create_processor(worker_plan, calibrate=False))
+        return processors
+
+    def create_processor(self, plan: JobPlan, *, calibrate: bool = True) -> BatchProcessor:
         """Host mode: FrameProcessor on float RGB; device mode: DeviceProcessor on raw YUV."""
         neural = plan.inference is not None
+        if plan.model.is_temporal and plan.inference is not None and plan.weights is not None:
+            import torch
+
+            from neuralframe.inference.temporal import TemporalModel, TemporalProcessor
+
+            return TemporalProcessor(TemporalModel(
+                plan.model, plan.weights, torch.device(plan.inference.device), plan.inference.precision,
+                strip_rows=plan.inference.strip_rows,
+            ))
         if plan.mode == "host":
             if not neural:
                 return IdentityProcessor()
             from neuralframe.inference.host import HostModelProcessor
 
             assert plan.inference is not None
-            return HostModelProcessor(
-                self._model_runner(plan), plan.geometry.model_passes, plan.inference.frames_per_call
-            )
+            runner = self._model_runner(plan, calibrate=calibrate)
+            return HostModelProcessor(runner, plan.geometry.model_passes, plan.inference.frames_per_call)
         import torch
 
         from neuralframe.inference.device import DeviceProcessor
         from neuralframe.inference.factory import resolve_device
 
-        runner = self._model_runner(plan) if neural else None
+        runner = self._model_runner(plan, calibrate=calibrate) if neural else None
         force_cpu = self.settings.inference.device == "cpu"
         device = runner.device if runner is not None else resolve_device(plan.spec.gpus, force_cpu=force_cpu)
         return DeviceProcessor(
@@ -687,16 +824,17 @@ class JobRunner:
         self._timed("plan_s", t)
 
         store = ChunkStore.open(plan.work_dir, plan.job_key, plan.fingerprint, resume=spec.resume)
-        if plan.inference is not None:
-            pinned = store.manifest.meta.get("inference")
-            if spec.resume and pinned:
-                # Reuse the tile layout of the interrupted run so resumed chunks match bit for bit.
-                plan.inference = dataclasses.replace(
-                    plan.inference, tile=pinned["tile"], overlap=pinned["tile_overlap"]
-                )
-            else:
-                store.set_meta(inference=plan.inference.summary())
-        processor = self.create_processor(plan)
+        pinned = store.manifest.meta.get("inference") if spec.resume else None
+        if plan.inference is not None and pinned:
+            # Reuse the calibrated tile/batch of the interrupted run so resumed chunks match bit for bit.
+            plan.inference = dataclasses.replace(
+                plan.inference, backend=pinned["backend"], device=pinned["device"],
+                precision=pinned["precision"], tile=pinned["tile"], overlap=pinned["tile_overlap"],
+                batch=pinned["batch"], frames_per_call=pinned["frames_per_call"],
+            )
+        processors = self.create_processors(plan, calibrate=pinned is None)
+        if plan.inference is not None and not pinned:
+            store.set_meta(inference=plan.inference.summary())
         warnings += self._fallbacks
         done_ids = set(store.completed())
         if done_ids:
@@ -708,13 +846,17 @@ class JobRunner:
         t = time.perf_counter()
         try:
             if len(done_ids) < len(plan.chunks.chunks):
-                self._run_pipeline(plan, tools, processor, store, done_ids)
+                self._run_pipeline(plan, tools, processors, store, done_ids)
             else:
+                self._resume_info = {"mode": "complete"}
                 log.info("all chunks already complete; skipping to mux")
         finally:
             resources = self._sampler.stop()
-            processor_stats = processor.stats()
-            processor.close()
+            processor_stats = processors[0].stats()
+            if len(processors) > 1:
+                processor_stats["workers"] = [p.stats() for p in processors]
+            for p in processors:
+                p.close()
         self._timed("pipeline_s", t)
         if self._decoder is not None:
             warnings += self._decoder.fallbacks
@@ -753,11 +895,23 @@ class JobRunner:
         return JobResult(job_id=self.job_id, output=spec.output, report_path=report_path, report=report)
 
     def _run_pipeline(
-        self, plan: JobPlan, tools: FFmpegTools, processor: BatchProcessor, store: ChunkStore, done_ids: set[int]
+        self,
+        plan: JobPlan,
+        tools: FFmpegTools,
+        processors: list[BatchProcessor],
+        store: ChunkStore,
+        done_ids: set[int],
     ) -> None:
         settings = self.settings
         cancel = self.cancel
+        processor = processors[0]
+        workers = len(processors)
         sizes = self._queue_sizes(plan, processor)
+        # Several workers finish frames out of order; cap frames in flight so the reorder buffer is bounded.
+        limiter = (
+            InFlightLimiter(sizes["inference"] + sizes["encode"] + workers * (4 * processor.batch_size + 4), cancel)
+            if workers > 1 else None
+        )
 
         def skip(index: int) -> bool:
             return plan.chunks.chunk_of(index).id in done_ids
@@ -766,11 +920,33 @@ class JobRunner:
         while first_index < plan.total_frames and skip(first_index):
             first_index = plan.chunks.chunk_of(first_index).end
 
+        # Resume by seeking when the finished chunks form a prefix (always true for in-order encoding)
+        # and no stateful temporal filter (hqdn3d) would make frames after a seek differ.
+        resume_after: Fraction | None = None
+        records = store.completed()
+        prefix = sorted(records)
+        stateful = any(f.startswith("hqdn3d") for f in plan.decode.filters)
+        tb_meta = store.manifest.time_base
+        if prefix and prefix == list(range(len(prefix))) and not stateful and tb_meta and not plan.model.is_temporal:
+            last = records[prefix[-1]]
+            resume_after = Fraction(last.last_pts) * Fraction(tb_meta)
+            first_index = last.end
+            log.info("resuming by seek", after_s=round(float(resume_after), 3), first_index=first_index)
+            self._resume_info = {"mode": "seek", "after_s": round(float(resume_after), 6), "first_index": first_index}
+        elif done_ids:
+            self._resume_info = {"mode": "decode-skip", "first_index": first_index}
+
         decoder = ResilientDecoder(
             tools, plan.spec.input, plan.media.require_video().index, plan.decode,
-            loglevel=settings.ffmpeg.loglevel,
+            loglevel=settings.ffmpeg.loglevel, resume_after=resume_after,
+            first_index=first_index if resume_after is not None else 0,
         ).start()
         self._decoder = decoder
+        if store.manifest.time_base is None:
+            store.manifest.time_base = f"{decoder.time_base.numerator}/{decoder.time_base.denominator}"
+            store.save()
+        elif resume_after is None and Fraction(store.manifest.time_base) != decoder.time_base:
+            log.warning("decoder time base changed since the interrupted run")
 
         def make_encoder(path: Path) -> SegmentEncoder:
             return SegmentEncoder(
@@ -779,51 +955,83 @@ class JobRunner:
             )
 
         def skip_decoded(index: int) -> bool:
-            # Resume: frames of verified chunks are decoded but not processed again.
-            return bool(done_ids) and skip(index)
+            # Resume without seeking: frames of verified chunks are decoded but not processed again.
+            return resume_after is None and bool(done_ids) and skip(index)
+
+        def chunk_done(chunk: Any, frames: int) -> None:
+            log.info("chunk committed", chunk_id=chunk.id, frames=frames)
+            if self.on_chunk_done is not None:
+                self.on_chunk_done(chunk.id, len(plan.chunks.chunks))
 
         encode_stage_args: dict[str, Any] = {
             "chunks": plan.chunks, "store": store, "make_encoder": make_encoder,
-            "first_index": first_index, "done_chunks": done_ids,
+            "first_index": first_index, "done_chunks": done_ids, "on_chunk_done": chunk_done,
+            "limiter": limiter,
         }
         stages: list[Any]
+        from neuralframe.inference.device import DeviceProcessor
+        from neuralframe.inference.temporal import TemporalProcessor
+
         use_streams = (
             plan.mode == "device" and settings.pipeline.cuda_streams
-            and getattr(processor, "device", None) is not None and processor.device.type == "cuda"  # type: ignore[attr-defined]
+            and isinstance(processor, DeviceProcessor) and processor.device.type == "cuda"
         )
-        if use_streams:
+        if isinstance(processor, TemporalProcessor):
+            # decode -> temporal stage (chunked sequences, cross-fades, scene-cut aware) -> encode
+            from neuralframe.inference.temporal import TemporalStage
+
+            q_t: StageQueue[Any] = StageQueue("inference", sizes["inference"], cancel)
+            q_te: StageQueue[Any] = StageQueue("encode", sizes["encode"], cancel)
+            self._queues = {q.name: q for q in (q_t, q_te)}
+            stages = [
+                DecodeStage(cancel, decoder.frames(), q_t),
+                TemporalStage(
+                    cancel, q_t, q_te, model=processor.model, chunks=plan.chunks, overlap=plan.temporal_overlap,
+                    in_fmt=plan.decode.fmt, out_fmt=plan.out_fmt, color=plan.encoder.color,
+                    kernel=plan.resize_kernel, done_chunks=done_ids, replicate_edges=plan.model.input == "window",
+                ),
+                EncodeStage(cancel, q_te, **encode_stage_args),
+            ]
+            processor.stage = stages[1]
+        elif use_streams:
             # decode -> upload (H2D + yuv->rgb) -> inference -> download (resize + rgb->yuv + D2H) -> encode,
-            # each GPU stage on its own CUDA stream so neighbouring batches overlap.
-            from neuralframe.inference.device import DeviceProcessor
+            # each GPU stage on its own CUDA stream so neighbouring batches overlap. With several GPUs every
+            # worker runs its own chain and they all pull from the same decode queue.
             from neuralframe.inference.gpu_stages import DownloadStage, InferStage, UploadStage
 
-            assert isinstance(processor, DeviceProcessor)
             q_upload: StageQueue[Any] = StageQueue("upload", sizes["inference"], cancel)
-            q_inf: StageQueue[Any] = StageQueue("inference", 2, cancel)
-            q_dl: StageQueue[Any] = StageQueue("postprocess", 2, cancel)
-            q_enc: StageQueue[Any] = StageQueue("encode", sizes["encode"], cancel)
-            self._queues = {q.name: q for q in (q_upload, q_inf, q_dl, q_enc)}
-            fpc = processor.batch_size
-            stages = [
-                DecodeStage(cancel, decoder.frames(), q_upload, skip=skip_decoded),
-                UploadStage(cancel, q_upload, q_inf, device=processor.device, fmt=plan.decode.fmt,
-                            color=plan.encoder.color, frames_per_call=fpc),
-                InferStage(cancel, q_inf, q_dl, device=processor.device, runner=processor.runner,
-                           passes=processor.passes),
-                DownloadStage(cancel, q_dl, q_enc, device=processor.device, fmt=plan.out_fmt,
-                              color=plan.encoder.color, kernel=plan.resize_kernel, frames_per_call=fpc),
-                EncodeStage(cancel, q_enc, **encode_stage_args),
-            ]
+            q_enc: StageQueue[Any] = StageQueue("encode", sizes["encode"], cancel, producers=workers)
+            self._queues = {"upload": q_upload, "encode": q_enc}
+            stages = [DecodeStage(cancel, decoder.frames(), q_upload, skip=skip_decoded, limiter=limiter)]
+            for w, proc in enumerate(processors):
+                assert isinstance(proc, DeviceProcessor)
+                sfx = f"@{w}" if workers > 1 else ""
+                q_inf: StageQueue[Any] = StageQueue("inference" + sfx, 2, cancel)
+                q_dl: StageQueue[Any] = StageQueue("postprocess" + sfx, 2, cancel)
+                self._queues[q_inf.name] = q_inf
+                self._queues[q_dl.name] = q_dl
+                fpc = proc.batch_size
+                stages += [
+                    UploadStage(cancel, q_upload, q_inf, device=proc.device, fmt=plan.decode.fmt,
+                                color=plan.encoder.color, frames_per_call=fpc, suffix=sfx),
+                    InferStage(cancel, q_inf, q_dl, device=proc.device, runner=proc.runner,
+                               passes=proc.passes, suffix=sfx),
+                    DownloadStage(cancel, q_dl, q_enc, device=proc.device, fmt=plan.out_fmt,
+                                  color=plan.encoder.color, kernel=plan.resize_kernel, frames_per_call=fpc,
+                                  suffix=sfx),
+                ]
+            stages.append(EncodeStage(cancel, q_enc, **encode_stage_args))
         elif plan.mode == "device":
             # decode -> [GPU: yuv->rgb, model, resize, rgb->yuv] -> encode
             q_in: StageQueue[Any] = StageQueue("inference", sizes["inference"], cancel)
-            q_done: StageQueue[Any] = StageQueue("encode", sizes["encode"], cancel)
+            q_done: StageQueue[Any] = StageQueue("encode", sizes["encode"], cancel, producers=workers)
             self._queues = {q.name: q for q in (q_in, q_done)}
-            stages = [
-                DecodeStage(cancel, decoder.frames(), q_in, skip=skip_decoded),
-                ProcessStage(cancel, q_in, q_done, processor=processor),
-                EncodeStage(cancel, q_done, **encode_stage_args),
+            stages = [DecodeStage(cancel, decoder.frames(), q_in, skip=skip_decoded, limiter=limiter)]
+            stages += [
+                ProcessStage(cancel, q_in, q_done, processor=proc, name="inference" + (f"@{w}" if workers > 1 else ""))
+                for w, proc in enumerate(processors)
             ]
+            stages.append(EncodeStage(cancel, q_done, **encode_stage_args))
         else:
             ops: FrameOps = get_ops(settings.pipeline.ops)
             q_raw: StageQueue[Any] = StageQueue("preprocess", sizes["preprocess"], cancel)
@@ -900,12 +1108,14 @@ class JobRunner:
             "throughput": {
                 "frames_processed_this_run": processed,
                 "frames_resumed": self._frames_skipped,
+                "resume": self._resume_info,
                 "pipeline_fps": round(processed / pipeline_s, 2) if pipeline_s > 0 else None,
                 "stages": stages,
                 "device_substages": substages,
                 "bottleneck": min(stages, key=lambda s: s["busy_fps"] or float("inf"))["name"] if stages else None,
             },
             "processor": processor_stats,
+            "vram": {"calibration": self._calibration, "adaptations": self._adaptations},
             "resources": resources,
             "sync": sync,
             "chunks": {"completed": len(store.completed()), "planned": len(plan.chunks.chunks)},

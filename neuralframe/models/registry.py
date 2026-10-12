@@ -44,6 +44,8 @@ class ModelSpec(BaseModel):
     licence_restricted: bool = False
     source_url: str | None = None
     state_dict_key: str | None = None
+    state_dict_prefix: str | None = None
+    """Keep only keys with this prefix (stripped), e.g. ``generator_ema.`` in mmedit checkpoints."""
 
     @property
     def is_classical(self) -> bool:
@@ -56,6 +58,11 @@ class ModelSpec(BaseModel):
     @property
     def temporal_radius(self) -> int:
         return (self.window - 1) // 2
+
+    @property
+    def default_overlap(self) -> int:
+        """Temporal overlap frames between chunks (window radius x 2; 0 for single-frame models)."""
+        return 2 * self.temporal_radius if self.is_temporal else 0
 
 
 class ModelRegistry:

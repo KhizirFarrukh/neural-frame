@@ -158,3 +158,26 @@ def test_cuda_stream_overlap_is_pixel_identical(
         assert report["sync"]["ok"]
         outputs[streams] = ffhelpers.frame_md5s(out)
     assert outputs[True] == outputs[False]
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("streams", [False, True])
+def test_two_workers_queue_pull_matches_one_worker(
+    caps: Capabilities, settings: Settings, tiny_registry: Any, clip: ClipFactory, tmp_path: Path, ffhelpers: Any,
+    streams: bool,
+) -> None:
+    """Multi-GPU scheduling, simulated with two workers sharing cuda:0: same frames as a single worker."""
+    settings.pipeline.cuda_streams = streams
+    src = clip("nn-workers", duration=1.5)
+    common: dict[str, Any] = {"input": src, "model": "tiny-srvgg-x2", "target": TargetSpec.factor(2),
+                              "encoder": "libx264", "codec": "h264", "quality": 0, "batch_size": 2}
+    single = tmp_path / "single.mkv"
+    _run(settings, caps, tiny_registry, output=single, gpus=[0], **common)
+    double = tmp_path / "double.mkv"
+    report = _run(settings, caps, tiny_registry, output=double, gpus=[0, 0], **common)
+    assert report["plan"]["inference"]["devices"] == ["cuda:0", "cuda:0"]
+    names = [s["name"] for s in report["throughput"]["stages"]]
+    assert "inference@0" in names and "inference@1" in names
+    frames = {s["name"]: s["frames"] for s in report["throughput"]["stages"]}
+    assert frames["inference@0"] > 0 and frames["inference@1"] > 0  # both workers pulled work
+    assert ffhelpers.frame_md5s(double) == ffhelpers.frame_md5s(single)

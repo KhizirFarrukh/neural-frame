@@ -182,3 +182,28 @@ def test_example_config_is_valid() -> None:
     s = load_settings(example)
     assert s.api.host == "127.0.0.1"
     assert s.preset("balanced").speed == "medium"
+
+
+def test_multi_producer_queue_closes_after_last_producer() -> None:
+    cancel = CancelToken()
+    q: StageQueue[int] = StageQueue("q", 10, cancel, producers=2)
+    q.put(1)
+    q.close()
+    q.put(2)
+    assert q.get() == 1 and q.get() == 2
+    q.close()
+    assert q.get() is None
+
+
+def test_in_flight_limiter_blocks_and_cancels() -> None:
+    from neuralframe.core.runtime import InFlightLimiter
+
+    cancel = CancelToken()
+    limiter = InFlightLimiter(2, cancel)
+    limiter.acquire()
+    limiter.acquire()
+    threading.Timer(0.2, limiter.release).start()
+    limiter.acquire()  # unblocked by the release
+    threading.Timer(0.2, cancel.cancel).start()
+    with pytest.raises(JobCancelled):
+        limiter.acquire()

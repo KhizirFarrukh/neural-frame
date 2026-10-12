@@ -238,15 +238,22 @@ class ResilientDecoder:
         *,
         loglevel: str = "error",
         seek_margin_s: float = 5.0,
+        resume_after: Fraction | None = None,
+        first_index: int = 0,
     ) -> None:
+        """``resume_after``: skip every frame at or before this time (seconds), seeking close to it first;
+        delivered frames are numbered from ``first_index``."""
         self.tools = tools
         self.path = path
         self.stream_index = stream_index
         self.plan = plan
         self.loglevel = loglevel
         self.seek_margin_s = seek_margin_s
+        self.resume_after = resume_after
+        self.first_index = first_index
         self.fallbacks: list[str] = []
-        self._current = FrameDecoder(tools, path, stream_index, plan, loglevel=loglevel)
+        seek = None if resume_after is None else max(0.0, float(resume_after) - seek_margin_s)
+        self._current = FrameDecoder(tools, path, stream_index, plan, seek_seconds=seek, loglevel=loglevel)
 
     @property
     def time_base(self) -> Fraction:
@@ -262,7 +269,8 @@ class ResilientDecoder:
         except NeuralFrameError as exc:
             if self.plan.hwaccel is None:
                 raise
-            self._switch_to_software(str(exc), seek_seconds=None)
+            seek = None if self.resume_after is None else max(0.0, float(self.resume_after) - self.seek_margin_s)
+            self._switch_to_software(str(exc), seek_seconds=seek)
             self._current.start()
         return self
 
@@ -276,8 +284,8 @@ class ResilientDecoder:
         )
 
     def frames(self) -> Iterator[DecodedFrame]:
-        delivered = 0
-        last_time: Fraction | None = None
+        delivered = self.first_index
+        last_time: Fraction | None = self.resume_after
         time_base = self._current.time_base
         while True:
             try:

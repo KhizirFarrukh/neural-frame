@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Any
 
 import torch
 
@@ -10,6 +11,9 @@ from neuralframe.chunking.tiling import TileLayout
 from neuralframe.inference.backend import InferenceBackend
 from neuralframe.models.registry import ModelSpec
 from neuralframe.ops.torch_ops import pad_to_multiple
+
+if TYPE_CHECKING:
+    from neuralframe.inference.vram import VramManager
 
 
 @dataclass
@@ -44,7 +48,15 @@ class ModelRunner:
         self.batch = max(1, batch)
         self.multiple = max(model.pad_multiple, 1)
         self.stats = RunnerStats()
-        self._weights: dict[tuple[int, int], tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor]] = {}
+        self._weights: dict[tuple[int, int, int, int], tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor]] = {}
+        self.vram: VramManager | None = None
+
+    def enable_recovery(self, **kwargs: Any) -> VramManager:
+        """Retry with smaller batches/tiles on out-of-memory instead of failing."""
+        from neuralframe.inference.vram import VramManager
+
+        self.vram = VramManager(self, **kwargs)
+        return self.vram
 
     @property
     def device(self) -> torch.device:
@@ -59,7 +71,7 @@ class ModelRunner:
     def _device_weights(
         self, layout: TileLayout
     ) -> tuple[list[torch.Tensor], list[torch.Tensor], torch.Tensor]:
-        key = (layout.height, layout.width)
+        key = (layout.height, layout.width, layout.tile_h, layout.tile_w)
         if key not in self._weights:
             wy, wx, total = layout.weight_maps(self.scale)
             self._weights[key] = (
@@ -71,6 +83,11 @@ class ModelRunner:
 
     def run(self, x: torch.Tensor) -> torch.Tensor:
         """``(N, 3, H, W)`` in [0, 1] → ``(N, 3, H*s, W*s)`` float32 in [0, 1]."""
+        if self.vram is None:
+            return self._run(x)
+        return self.vram.run_with_recovery(lambda: self._run(x), (int(x.shape[-2]), int(x.shape[-1])))
+
+    def _run(self, x: torch.Tensor) -> torch.Tensor:
         n, _, h, w = x.shape
         padded, _, _ = pad_to_multiple(x, self.multiple)
         hp, wp = padded.shape[-2:]
