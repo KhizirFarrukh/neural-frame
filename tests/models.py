@@ -59,3 +59,28 @@ def tiny_temporal_model(models_dir: Path, model_id: str = "tiny-realbasicvsr") -
         licence="test-only",
     )
     return spec, path
+
+
+def tiny_rife_model(models_dir: Path, model_id: str = "tiny-rife") -> tuple[ModelSpec, Path]:
+    """Narrow IFNet with all weights zeroed: zero flow and a 0.5 fusion mask, i.e. an exact midpoint blend.
+
+    That makes interpolated frames predictable while the whole frame generation path still runs."""
+    from neuralframe.inference.archs.rife import IFNet
+
+    params = {"scale": 1.0, "channels": [8, 8, 8, 8]}
+    net = IFNet(scale=1.0, channels=(8, 8, 8, 8))
+    with torch.no_grad():
+        for p in net.parameters():
+            p.zero_()
+    path = models_dir / model_id / f"{model_id}.pkl"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    torch.save({f"module.{k}": v for k, v in net.state_dict().items()}, path)
+    sha = hashlib.sha256(path.read_bytes()).hexdigest()
+    spec = ModelSpec(
+        id=model_id, kind="interpolation", scale=1, architecture="rife", params=params, pad_multiple=32,
+        state_dict_prefix="module.",
+        weights=WeightsSpec(url="https://invalid.example/r.pkl", sha256=sha, filename=path.name,
+                            size_bytes=path.stat().st_size),
+        licence="test-only",
+    )
+    return spec, path

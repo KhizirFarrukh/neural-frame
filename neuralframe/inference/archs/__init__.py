@@ -26,6 +26,10 @@ def build_network(spec: ModelSpec) -> nn.Module:
         from neuralframe.inference.archs.basicvsr import RealBasicVSRNet
 
         return RealBasicVSRNet(**params)
+    if spec.architecture == "rife":
+        from neuralframe.inference.archs.rife import IFNet
+
+        return IFNet(**params)
     raise NeuralFrameError(
         ErrorCode.MODEL_UNAVAILABLE, f"architecture {spec.architecture!r} of model {spec.id!r} is not implemented"
     )
@@ -43,6 +47,8 @@ def load_network(spec: ModelSpec, weights: Path) -> nn.Module:
     if isinstance(state, dict) and spec.state_dict_prefix:
         prefix = spec.state_dict_prefix
         state = {k[len(prefix):]: v for k, v in state.items() if k.startswith(prefix)}
+    if isinstance(state, dict) and spec.state_dict_exclude:
+        state = {k: v for k, v in state.items() if not k.startswith(tuple(spec.state_dict_exclude))}
     elif isinstance(state, dict):
         for key in ("params_ema", "params", "state_dict"):
             if key in state and isinstance(state[key], dict):

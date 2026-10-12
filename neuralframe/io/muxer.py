@@ -284,7 +284,8 @@ def verify_output(
     src_duration = expected_video_duration_s
     if src_duration is None and src_video is not None:
         src_duration = src_video.duration or source.duration
-    out_duration = out_video.duration or out.duration
+    # MKV has no per-stream duration and its container duration includes audio padding.
+    out_duration = out_video.duration or timeline.span_s or out.duration
     if src_duration is not None and out_duration is not None and abs(src_duration - out_duration) > tolerance:
         problems.append(f"video duration {out_duration:.4f}s differs from {src_duration:.4f}s by > one frame")
 

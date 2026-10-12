@@ -8,8 +8,9 @@ lost.
 
 from __future__ import annotations
 
+import contextlib
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
@@ -112,8 +113,10 @@ class VramManager:
         *,
         frames: int,
         safety_margin: float,
+        reserve_bytes: int = 0,
     ) -> dict[str, Any]:
-        """Dry-run one batch of synthetic frames; adapt until it fits with ``safety_margin`` free VRAM."""
+        """Dry-run one batch of synthetic frames; adapt until it fits with ``safety_margin`` free VRAM on top of
+        ``reserve_bytes`` kept for other work on the device (frame interpolation)."""
         r = self.runner
         t0 = time.perf_counter()
         h, w = frame_hw
@@ -136,9 +139,10 @@ class VramManager:
             if device.type != "cuda":
                 break
             free, total = torch.cuda.mem_get_info(device)
-            if free >= safety_margin * total or (r.batch == 1 and (r.tile or 10**9) <= self.min_tile):
+            if free - reserve_bytes >= safety_margin * total or (r.batch == 1 and (r.tile or 10**9) <= self.min_tile):
                 break
-            self.adapt(f"only {free // 2**20} MB free after calibration (< {safety_margin:.0%})", frame_hw)
+            reserved = f" + {reserve_bytes // 2**20} MB reserved" if reserve_bytes else ""
+            self.adapt(f"only {free // 2**20} MB free after calibration (< {safety_margin:.0%}{reserved})", frame_hw)
         self._release()
         return {
             "batch": r.batch,
@@ -147,3 +151,27 @@ class VramManager:
             "seconds": round(time.perf_counter() - t0, 2),
             "adaptations": [a.as_dict() for a in self.history],
         }
+
+
+@contextlib.contextmanager
+def cap_torch_cache(devices: list[torch.device], margin_fraction: float) -> Iterator[dict[str, int]]:
+    """Bound PyTorch's caching allocator to the memory each device has free now, minus a margin.
+
+    Stages on separate CUDA streams cannot reuse each other's cached blocks, so without a bound the cache
+    keeps growing until the device is full; on Windows the driver then spills into shared system memory
+    and everything on the GPU slows down several times. Under the cap the allocator frees cached blocks
+    and retries before it grows. Removed again on exit (the process may run further jobs).
+    """
+    limits: dict[str, int] = {}
+    cuda = [d for d in dict.fromkeys(devices) if d.type == "cuda"]
+    for device in cuda:
+        free, total = torch.cuda.mem_get_info(device)
+        limit = torch.cuda.memory_reserved(device) + free - int(margin_fraction * total)
+        limit = max(limit, 512 * 2**20)
+        torch.cuda.set_per_process_memory_fraction(min(1.0, limit / total), device)
+        limits[str(device)] = limit // 2**20
+    try:
+        yield limits
+    finally:
+        for device in cuda:
+            torch.cuda.set_per_process_memory_fraction(1.0, device)

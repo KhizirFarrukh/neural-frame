@@ -236,6 +236,15 @@ def _print_plan(plan: JobPlan) -> None:
     if plan.mode == "host":
         where = f"host (ops={plan.ops})"
     table.add_row("frames", f"{plan.total_frames} in {len(plan.chunks.chunks)} chunk(s), pipeline {where}")
+    if plan.framegen:
+        fg = plan.framegen
+        drops = fg.get("drops", {})
+        table.add_row(
+            "framegen",
+            f"{fg['engine']} -> {fg['fps']} fps ({fg['order'].replace('_', ' ')}); "
+            f"{drops.get('duplicated_frames', 0)} frozen frame(s), {drops.get('frames_missing_in_gaps', 0)} "
+            "missing in gaps to repair",
+        )
     console.print(table)
     for note in plan.notes:
         console.print(f"  [dim]- {note}[/]")
@@ -272,9 +281,21 @@ def upscale(
     resume: bool = typer.Option(False, "--resume", help="Continue an interrupted job."),
     overwrite: bool = typer.Option(False, "--overwrite", "-y", help="Replace an existing output."),
     keep_work: bool = typer.Option(False, "--keep-work", help="Keep intermediate segments."),
+    interpolate: bool = typer.Option(
+        False, "--interpolate", "-i", help="Frame generation: constant frame rate (default 60) + drop repair."
+    ),
+    fps: str | None = typer.Option(None, "--fps", help="Frame generation target, e.g. 60, 59.94, 120 (implies -i)."),
+    no_upscale: bool = typer.Option(False, "--no-upscale", help="Keep the source size (frame generation only)."),
+    repair_drops: str | None = typer.Option(None, "--repair-drops", help="auto | on | off"),
+    framegen_engine: str | None = typer.Option(None, "--framegen-engine", help="auto | rife | minterpolate"),
+    framegen_order: str | None = typer.Option(
+        None, "--framegen-order", help="auto (default) | upscale_first | interpolate_first"
+    ),
 ) -> None:
-    """Upscale a video or image (default target: 4K, aspect ratio preserved)."""
+    """Upscale a video or image (default target: 4K, aspect ratio preserved); optionally generate frames."""
     state = _state(ctx)
+    if no_upscale and not (interpolate or fps):
+        raise typer.BadParameter("--no-upscale only makes sense with frame generation (--interpolate / --fps)")
     try:
         spec = JobSpec(
             input=input_path,
@@ -298,13 +319,50 @@ def upscale(
             resume=resume,
             overwrite=overwrite,
             keep_work_dir=True if keep_work else None,
+            upscale=not no_upscale,
+            interpolate=interpolate or fps is not None,
+            target_fps=fps,
+            repair_drops=repair_drops,
+            framegen_engine=framegen_engine,
+            framegen_order=framegen_order,
         )
     except NeuralFrameError as exc:
         _fail(exc)
         return
     except ValueError as exc:
         raise typer.BadParameter(str(exc)) from exc
+    _run_job(state, spec)
 
+
+@app.command("interpolate")
+def interpolate_cmd(
+    ctx: typer.Context,
+    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Input video."),
+    output: Path = typer.Option(..., "--output", "-o", help="Output video (.mkv .mp4 .mov .webm)."),
+    fps: str | None = typer.Option(None, "--fps", help="Target frame rate (default 60; 59.94, 120, 24000/1001...)."),
+    repair_drops: str | None = typer.Option(None, "--repair-drops", help="auto | on | off"),
+    engine: str | None = typer.Option(None, "--engine", help="auto | rife | minterpolate"),
+    encoder: str | None = typer.Option(None, "--encoder", help="auto or an FFmpeg encoder name."),
+    codec: str | None = typer.Option(None, "--codec", help="hevc | h264 | av1"),
+    quality: int | None = typer.Option(None, "--crf", "--cq", help="Constant-quality value."),
+    chunk_frames: int | None = typer.Option(None, "--chunk-frames"),
+    resume: bool = typer.Option(False, "--resume", help="Continue an interrupted job."),
+    overwrite: bool = typer.Option(False, "--overwrite", "-y", help="Replace an existing output."),
+) -> None:
+    """Frame generation only: constant frame rate output with dropped/frozen frames re-synthesised."""
+    state = _state(ctx)
+    try:
+        spec = JobSpec(
+            input=input_path, output=output, upscale=False, interpolate=True, target_fps=fps,
+            repair_drops=repair_drops, framegen_engine=engine, encoder=encoder, codec=codec, quality=quality,
+            chunk_frames=chunk_frames, resume=resume, overwrite=overwrite,
+        )
+    except ValueError as exc:
+        raise typer.BadParameter(str(exc)) from exc
+    _run_job(state, spec)
+
+
+def _run_job(state: AppState, spec: JobSpec) -> None:
     progress = Progress(
         TextColumn("[bold]{task.fields[state]:<9}"),
         BarColumn(),
@@ -354,6 +412,13 @@ def upscale(
             f"frames) in {report['timings']['total_s']:.1f}s - pipeline {tp['pipeline_fps']} fps, "
             f"bottleneck: {tp['bottleneck']}"
         )
+        if report.get("framegen"):
+            fg = report["framegen"]
+            runtime = fg.get("runtime") or {}
+            console.print(
+                f"  frame generation: {fg['fps']} fps, {runtime.get('interpolated', 0)} synthesised, "
+                f"{fg['drops']['duplicated_frames']} frozen frame(s) repaired"
+            )
     console.print(f"[dim]report: {result.report_path}[/]")
 
 

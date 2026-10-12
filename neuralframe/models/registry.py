@@ -46,6 +46,8 @@ class ModelSpec(BaseModel):
     state_dict_key: str | None = None
     state_dict_prefix: str | None = None
     """Keep only keys with this prefix (stripped), e.g. ``generator_ema.`` in mmedit checkpoints."""
+    state_dict_exclude: list[str] = Field(default_factory=list)
+    """Key prefixes (after stripping) of training-only tensors to drop, e.g. ``teacher.``."""
 
     @property
     def is_classical(self) -> bool:

@@ -1,0 +1,332 @@
+{
+  "hardware": {
+    "device": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "torch": "2.14.1+cu130",
+    "cuda": "13.0",
+    "cpu": "AMD Ryzen 5 7640HS w/ Radeon 760M Graphics",
+    "python": "3.12.10"
+  },
+  "model": "rife-4.22",
+  "results": [
+    {
+      "size": "720p",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 17.38,
+      "frames_per_s": 57.5,
+      "peak_mb": 286
+    },
+    {
+      "size": "720p",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 64.23,
+      "frames_per_s": 62.3,
+      "peak_mb": 986
+    },
+    {
+      "size": "720p",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 22.15,
+      "frames_per_s": 45.1,
+      "peak_mb": 390
+    },
+    {
+      "size": "720p",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 99.96,
+      "frames_per_s": 40.0,
+      "peak_mb": 1381
+    },
+    {
+      "size": "1080p",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 33.19,
+      "frames_per_s": 30.1,
+      "peak_mb": 588
+    },
+    {
+      "size": "1080p",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 139.62,
+      "frames_per_s": 28.7,
+      "peak_mb": 2080
+    },
+    {
+      "size": "1080p",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 51.18,
+      "frames_per_s": 19.5,
+      "peak_mb": 845
+    },
+    {
+      "size": "1080p",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 236.22,
+      "frames_per_s": 16.9,
+      "peak_mb": 3041
+    },
+    {
+      "size": "1440p",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 64.25,
+      "frames_per_s": 15.6,
+      "peak_mb": 1045
+    },
+    {
+      "size": "1440p",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 256.64,
+      "frames_per_s": 15.6,
+      "peak_mb": 2838
+    },
+    {
+      "size": "1440p",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 100.86,
+      "frames_per_s": 9.9,
+      "peak_mb": 1478
+    },
+    {
+      "size": "1440p",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 419.07,
+      "frames_per_s": 9.5,
+      "peak_mb": 4051
+    },
+    {
+      "size": "4K",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 146.09,
+      "frames_per_s": 6.8,
+      "peak_mb": 2294
+    },
+    {
+      "size": "4K",
+      "precision": "fp16",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 578.97,
+      "frames_per_s": 6.9,
+      "peak_mb": 2626
+    },
+    {
+      "size": "4K",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 244.29,
+      "frames_per_s": 4.1,
+      "peak_mb": 3319
+    },
+    {
+      "size": "4K",
+      "precision": "fp16",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 971.49,
+      "frames_per_s": 4.1,
+      "peak_mb": 3651
+    },
+    {
+      "size": "720p",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 27.33,
+      "frames_per_s": 36.6,
+      "peak_mb": 548
+    },
+    {
+      "size": "720p",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 111.78,
+      "frames_per_s": 35.8,
+      "peak_mb": 1954
+    },
+    {
+      "size": "720p",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 40.44,
+      "frames_per_s": 24.7,
+      "peak_mb": 692
+    },
+    {
+      "size": "720p",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 180.41,
+      "frames_per_s": 22.2,
+      "peak_mb": 2526
+    },
+    {
+      "size": "1080p",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 62.49,
+      "frames_per_s": 16.0,
+      "peak_mb": 1128
+    },
+    {
+      "size": "1080p",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 245.23,
+      "frames_per_s": 16.3,
+      "peak_mb": 3114
+    },
+    {
+      "size": "1080p",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 98.8,
+      "frames_per_s": 10.1,
+      "peak_mb": 1491
+    },
+    {
+      "size": "1080p",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 407.43,
+      "frames_per_s": 9.8,
+      "peak_mb": 4198
+    },
+    {
+      "size": "1440p",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 111.27,
+      "frames_per_s": 9.0,
+      "peak_mb": 2006
+    },
+    {
+      "size": "1440p",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 445.44,
+      "frames_per_s": 9.0,
+      "peak_mb": 3884
+    },
+    {
+      "size": "1440p",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 183.79,
+      "frames_per_s": 5.4,
+      "peak_mb": 2514
+    },
+    {
+      "size": "1440p",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 732.99,
+      "frames_per_s": 5.5,
+      "peak_mb": 4989
+    },
+    {
+      "size": "4K",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 1,
+      "ms_per_call": 253.06,
+      "frames_per_s": 4.0,
+      "peak_mb": 4398
+    },
+    {
+      "size": "4K",
+      "precision": "fp32",
+      "scale": 0.5,
+      "auto_scale": true,
+      "timesteps": 4,
+      "ms_per_call": 1010.14,
+      "frames_per_s": 4.0,
+      "peak_mb": 4684
+    },
+    {
+      "size": "4K",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 1,
+      "ms_per_call": 427.12,
+      "frames_per_s": 2.3,
+      "peak_mb": 5849
+    },
+    {
+      "size": "4K",
+      "precision": "fp32",
+      "scale": 1.0,
+      "auto_scale": false,
+      "timesteps": 4,
+      "ms_per_call": 1987.11,
+      "frames_per_s": 2.0,
+      "peak_mb": 6135
+    }
+  ]
+}

@@ -161,6 +161,26 @@ class VramConfig(_Section):
     calibrate: bool = True
 
 
+class FrameGenConfig(_Section):
+    fps: str = "60"
+    """Default target frame rate for frame generation ("60", "59.94", "60000/1001", ...)."""
+    ntsc_snap: bool = True
+    """Use 60000/1001 instead of 60 when the source runs on an NTSC clock (exact 2x for 29.97)."""
+    engine: Literal["auto", "rife", "minterpolate"] = "auto"
+    model: str = "rife-4.22"
+    repair_drops: Literal["auto", "on", "off"] = "auto"
+    order: Literal["auto", "upscale_first", "interpolate_first"] = "auto"
+    """auto: interpolate first for classical and compact models (cheaper), upscale first for heavy models."""
+    rife_scale: float | None = Field(default=None, gt=0, le=1)
+    """RIFE flow scale (1.0, 0.5, 0.25); None = automatic by frame size."""
+    max_gap_s: float = Field(default=0.5, gt=0)
+    """Longer gaps are held (nearest frame) instead of morphed across."""
+    dup_threshold: float = Field(default=0.0025, gt=0)
+    motion_threshold: float = Field(default=0.008, gt=0)
+
+    _switches = field_validator("repair_drops", mode="before")(_yaml_switch)
+
+
 class ApiConfig(_Section):
     host: str = "127.0.0.1"
     port: int = 8765
@@ -202,6 +222,7 @@ class Settings(BaseSettings):
     pipeline: PipelineConfig = Field(default_factory=PipelineConfig)
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     vram: VramConfig = Field(default_factory=VramConfig)
+    framegen: FrameGenConfig = Field(default_factory=FrameGenConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     presets: dict[str, PresetConfig] = Field(default_factory=dict)

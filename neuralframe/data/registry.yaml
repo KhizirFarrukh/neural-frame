@@ -100,3 +100,24 @@ models:
       sha256: 52f77c2c835aaa3fe675b3959b2f85010a6c6f63f77f7e279394646e55a4e376
       filename: realbasicvsr_c64b20_1x30x8_lr5e-5_150k_reds_20211104-52f77c2c.pth
       size_bytes: 148239017
+
+  - id: rife-4.22
+    kind: interpolation
+    scale: 1
+    architecture: rife
+    params: {scale: 1.0}
+    pad_multiple: 32
+    state_dict_prefix: module.
+    state_dict_exclude: [teacher., caltime.]
+    description: >-
+      RIFE v4.22 (Practical-RIFE). Arbitrary-timestep video frame interpolation; used for frame generation
+      (constant output frame rate) and to re-synthesise dropped or duplicated frames.
+    recommended_content: [live-action, animation, games, screen recordings]
+    source_url: https://github.com/hzwer/Practical-RIFE
+    licence: MIT
+    licence_url: https://github.com/hzwer/Practical-RIFE/blob/main/LICENSE
+    weights:
+      url: https://github.com/HolyWu/vs-rife/releases/download/model/flownet_v4.22.pkl
+      sha256: 549df85a6e5b55c4488864b21d4c9b35f415070bbb62c22c3cb6bf788c3d4af5
+      filename: flownet_v4.22.pkl
+      size_bytes: 40971191

@@ -75,6 +75,21 @@ vram:
   max_vram_gb: null     # hard cap, e.g. 4.0 to leave room for other applications
   calibrate: true       # probe (batch, tile) combinations before the first chunk
 
+# Frame generation (--interpolate / --fps, `neuralframe interpolate`): constant frame rate output with
+# dropped and frozen frames re-synthesised.
+framegen:
+  fps: "60"             # default target; "59.94", "60000/1001", "120", ... (quote it)
+  ntsc_snap: true       # 29.97 fps sources go to 59.94 (an exact 2x) instead of 60
+  engine: auto          # auto (RIFE when PyTorch is installed) | rife | minterpolate (FFmpeg, model-free)
+  model: rife-4.22
+  repair_drops: "auto"  # "auto" keeps regular holds (animation on twos); "on" repairs every repeat; "off"
+  order: auto           # auto | upscale_first | interpolate_first (RIFE on the small source frames);
+                        # auto interpolates first for classical/compact models, upscales first otherwise
+  rife_scale: null      # flow resolution 1.0 / 0.5 / 0.25; null picks by frame size (0.5 for 4K)
+  max_gap_s: 0.5        # longer timestamp gaps are held, not morphed across
+  dup_threshold: 0.0025 # frame difference below which a frame counts as a repeat
+  motion_threshold: 0.008  # neighbourhood motion above which a repeat is a dropped frame, not a still shot
+
 api:
   host: 127.0.0.1       # bind address; keep local unless you know what you are doing
   port: 8765

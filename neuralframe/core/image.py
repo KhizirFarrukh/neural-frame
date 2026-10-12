@@ -108,6 +108,8 @@ def run_image_job(runner: JobRunner, spec: JobSpec, tools: FFmpegTools, media: M
             f"image input needs an image output, got {spec.output.suffix!r}",
             hint="use .png, .jpg, .webp, .tif or .bmp",
         )
+    if spec.interpolate:
+        raise NeuralFrameError(ErrorCode.INVALID_INPUT, "frame generation needs a video; images can only be upscaled")
     video = media.require_video()
     model = runner.resolve_model(spec)
     geometry, notes = plan_geometry(video, spec.target, model.scale, even_dims=False, cascade=True)

@@ -36,10 +36,11 @@ desktop GUI application.
    - Retiming maps each output timestamp to its two surrounding unique source frames and an interpolation
      time `t`; exact matches are copied, never interpolated. No interpolation across scene cuts (nearest
      frame is used instead).
-   - Model: RIFE v4.x family (arbitrary-timestep IFNet, MIT licence) in PyTorch with ONNX/TensorRT export;
-     FFmpeg `minterpolate` as a model-free fallback.
-   - Default order when both are selected: **upscale → interpolate** (the SR model is the expensive part, so
-     it runs on source frames only; interpolated frames inherit consistent SR detail). Configurable.
+   - Model: RIFE v4.22 (arbitrary-timestep IFNet, MIT licence) in PyTorch (FP16); FFmpeg `minterpolate`
+     as a model-free fallback.
+   - Order when both are selected (`framegen.order`, default `auto`): heavy SR models run **upscale →
+     interpolate** (SR sees each source frame once); classical resizing and compact models run
+     **interpolate → upscale**, which measured 3.3× / 1.4× faster (see M6 findings). Configurable.
    - Frame/drop statistics go into the job report.
 
 ## 2. Development machine (capability check, 2026-10-12)
@@ -109,6 +110,9 @@ desktop GUI application.
   (≈0.6 MB/frame at 480p, negligible next to inference).
 - Weights are downloaded on first use; SHA256 values in the registry are pinned from the official release
   files.
+- Drop detection works on 64x36 thumbnails: a frozen frame is found when its neighbourhood moves. A drop
+  inside a nearly static shot (only a small object moving) is indistinguishable from a still frame and is
+  left alone; `framegen.repair_drops: on` repairs every repeat instead.
 
 ### Findings from Milestone 1 (measured, not assumed)
 
@@ -167,6 +171,31 @@ desktop GUI application.
   the 4x head runs in strips with a 4-row halo to bound memory (matches whole-frame within 1e-4).
 - Temporal chunks cross-fade over `overlap` frames at non-cut boundaries; a resumed job re-runs the last
   finished chunk without emitting it to rebuild the shared blend zone, keeping output bit-identical.
+
+### Findings from Milestone 6
+
+- RIFE 4.22 re-implemented in plain PyTorch loads the released `flownet.pkl` unchanged. On a panning test
+  (50 fps truth, every other frame regenerated from a 25 fps copy) RIFE reaches 36.6 dB PSNR against
+  26.6 dB for a cross-fade; copied frames are bit-exact. A zero-initialised narrow IFNet is an exact
+  midpoint blend, which makes CI tests deterministic without downloading weights.
+- RIFE FP16 throughput on the RTX 4060 Laptop (`benchmarks/results/framegen-*.md`): 720p 45 fps, 1080p
+  19.5 fps, 1440p 15.6 fps (flow scale 0.5), 4K 6.8 fps (0.5); FP16 is ~2× FP32. Batching several
+  timesteps of one pair gives no speed-up (the GPU is already saturated) but multiplies VRAM: 4 timesteps
+  at 4K ran out of memory, and at 1440p FP32 the Windows driver spilled into shared memory (3.2 s instead
+  of 0.73 s per call). Timestep batches are now sized from free VRAM and halved on OOM.
+- PyTorch's caching allocator keeps a separate cache per CUDA stream; with upload / inference / download /
+  RIFE on their own streams it grew to fill the 8 GB card (6.8 GB reserved for a 4.1 GB working set) and
+  the driver spilled to system memory. The job now caps the cache at the memory free when the pipeline
+  starts minus the safety margin (lifted afterwards), and SR planning/calibration leaves RIFE's measured
+  footprint free: 480p → 1080p + 59.94 fps went from 53.6 s (11.2 fps) to 28.4 s (21.1 fps), no OOMs.
+- Order, reference clip (300 → 600 frames, 59.94 fps): animevideov3 → 1080p upscale-first 21.9 fps vs
+  interpolate-first 29.8 fps; Lanczos → 4K 10.4 vs 34.2 fps. Interpolating first adds one SR pass per
+  synthesised frame and saves RIFE(output) − RIFE(source), so `auto` interpolates first only for classical
+  and compact models; RRDBNet models (≈1.7 s/frame for x4plus) upscale first.
+- FFmpeg `minterpolate` stops at the last input frame; the fallback clones one frame past the end
+  (`tpad`) and trims the grid there, so both engines give the same frame count.
+- Matroska stores no per-stream duration and its container duration includes audio padding (21 ms for
+  AAC, more than one 60 fps frame); verification measures the video span from the packet scan.
 
 ## 5. Milestones
 
@@ -228,16 +257,22 @@ desktop GUI application.
 - [x] Tests: planner, simulated OOM, kill-and-resume identical frame checksums
 
 ### M6 — Frame generation
-- [ ] Analysis pass shared with scene detection: per-pair timestamp delta, downscaled-luma difference,
-      scene score → drop map (gaps, duplicate runs) + unique-frame timeline
-- [ ] Retime planner: CFR target grid (default 60, NTSC snapping), (frame0, frame1, t) per output frame,
-      exact-match copies, scene-cut nearest-frame rule, source-faster-than-target decimation with warning
-- [ ] `InterpolationBackend` + RIFE v4.x IFNet (Torch), ONNX/TensorRT export with timestep input,
-      `minterpolate` fallback
-- [ ] Pipeline integration: retime stage after upscaling (configurable order), chunk overlap of one
-      frame on the right, resume-safe; job report gets drop/interpolation stats
-- [ ] Tests: synthetic clips with injected drops (removed frames, duplicated frames, VFR gaps) →
-      detected exactly; output frame count/timestamps CFR; A/V sync; no ghosting across scene cuts
+- [x] Analysis pass shared with scene detection: per-pair timestamp delta, downscaled-luma difference,
+      scene score → drop map (gaps, sporadic repeats in moving content; regular holds such as animation
+      on twos are kept in `auto` mode)
+- [x] Retime planner: CFR target grid (default 60, NTSC snapping), (frame0, frame1, t) per output frame,
+      exact-match copies, scene-cut and long-gap nearest-frame rule, source-faster-than-target selection
+      with a note
+- [x] RIFE 4.22 IFNet (Torch, FP16, VRAM-sized timestep batches, OOM split) + `minterpolate` fallback;
+      ~~ONNX/TensorRT export~~ deferred: RIFE's per-call shapes change with the flow scale and the stage is
+      GPU-bound alongside SR, so a TRT engine needs its own profile set and benchmark (listed in M9)
+- [x] Pipeline integration: retime stage before or after super-resolution (`auto` order by model cost),
+      framegen-only passthrough (no pixel processing, copies bit-exact), output-indexed chunks, resume by
+      decode-skip, report section with drop/interpolation stats; CLI `--interpolate/--fps/--no-upscale`
+      and `neuralframe interpolate`
+- [x] Tests: synthetic clips with removed frames, frozen frames and VFR gaps → detected exactly; output
+      frame count and timestamps CFR; A/V sync; nearest frame (no blend) across scene cuts; both orders;
+      kill-and-resume identical; real RIFE beats blending on CUDA
 
 ### M7 — Job service + web UI
 - [ ] SQLite job store (SQLAlchemy 2.0), priorities, restart-safe queue, one active job per GPU
@@ -259,6 +294,7 @@ desktop GUI application.
 - [ ] PSNR/SSIM (NumPy), LPIPS (optional), VMAF (libvmaf) vs bicubic/Lanczos baselines
 - [ ] Seam test (chunk-boundary MAD ratio), tile-seam test (> 45 dB), flicker metric
 - [ ] `benchmarks/run.py` → Markdown + JSON results with hardware info
+- [ ] Optional: RIFE ONNX/TensorRT export (timestep input) if it beats PyTorch FP16 inside the pipeline
 - [ ] README (Mermaid diagram, quickstart pip + Docker, CLI/config reference, hardware matrix,
       troubleshooting, assumptions & limitations), ARCHITECTURE, BENCHMARKS, GALLERY, MODEL_CARDS
 - [ ] Dockerfile + docker-compose verified with the NVIDIA runtime; CI workflow (CPU path)

@@ -211,3 +211,10 @@ class FrameTimeline(_Model):
 
     def seconds(self, index: int) -> float:
         return float(self.pts[index] * self.time_base)
+
+    @property
+    def span_s(self) -> float | None:
+        """First frame start to last frame end (video only, unlike a container duration that includes audio)."""
+        if not self.pts:
+            return None
+        return float((self.pts[-1] - self.pts[0] + self.nominal_duration) * self.time_base)
