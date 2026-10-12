@@ -48,11 +48,17 @@ def _resolve(explicit: str | None, env_var: str, name: str, sibling_of: str | No
             found = shutil.which(candidate) or (candidate if Path(candidate).is_file() else None)
             if found:
                 return found
+    exe = name + (".exe" if sys.platform == "win32" else "")
     if sibling_of is not None:
-        exe = name + (".exe" if sys.platform == "win32" else "")
         sibling = Path(sibling_of).with_name(exe)
         if sibling.is_file():
             return str(sibling)
+    # A packaged release ships a known-good FFmpeg next to the executables; prefer it over PATH.
+    from neuralframe.bundle import bundled
+
+    shipped = bundled("ffmpeg", exe)
+    if shipped is not None:
+        return str(shipped)
     return shutil.which(name)
 
 

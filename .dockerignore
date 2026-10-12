@@ -1,0 +1,13 @@
+.git
+.venv
+build
+_skbuild
+**/__pycache__
+*.pyc
+*.egg-info
+.mypy_cache
+.ruff_cache
+.pytest_cache
+benchmarks/results
+docs/gallery
+data

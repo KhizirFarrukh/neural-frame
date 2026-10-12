@@ -81,7 +81,10 @@ class OnnxRuntimeBackend(InferenceBackend):
         provider_options: list[dict[str, Any]] = []
         for p in providers:
             if p == "CUDAExecutionProvider":
-                provider_options.append({"device_id": self.device.index or 0, "cudnn_conv_algo_search": "HEURISTIC"})
+                # Grow the memory arena by what is requested, not by powers of two: the default strategy
+                # took the whole GPU next to PyTorch's colour/resize stages.
+                provider_options.append({"device_id": self.device.index or 0, "cudnn_conv_algo_search": "HEURISTIC",
+                                         "arena_extend_strategy": "kSameAsRequested"})
             else:
                 provider_options.append({})
         try:

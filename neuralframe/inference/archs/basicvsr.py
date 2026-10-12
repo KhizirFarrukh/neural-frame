@@ -130,6 +130,12 @@ class SPyNet(nn.Module):
         return flow * scale
 
 
+# Frames per call of the per-frame parts (optical flow, image cleaning). They have no coupling between
+# frames, so processing a chunk in groups gives the same result while peak memory stops growing with the
+# chunk length (measured: a 2.7 GB single allocation for a 480p chunk when run on all frames at once).
+FRAME_GROUP = 4
+
+
 class BasicVSRNet(nn.Module):
     def __init__(self, mid_channels: int = 64, num_blocks: int = 30) -> None:
         super().__init__()
@@ -167,6 +173,11 @@ class BasicVSRNet(nn.Module):
             parts.append(out[..., (y0 - a) * 4 : (y0 - a) * 4 + (y1 - y0) * 4, :])
         return torch.cat(parts, dim=-2)
 
+    def _flows(self, a: Tensor, b: Tensor, dtype: torch.dtype) -> Tensor:
+        """SPyNet flow ``a -> b`` for frame pairs, a few pairs per call (bounded memory)."""
+        return torch.cat([self.spynet(a[s : s + FRAME_GROUP].to(dtype), b[s : s + FRAME_GROUP].to(dtype))
+                          for s in range(0, a.shape[0], FRAME_GROUP)])
+
     def iter_outputs(self, lrs: Tensor) -> Iterator[tuple[int, Tensor]]:
         """Yield ``(t, (N, 3, 4H, 4W))`` frame by frame for ``lrs`` (N, T, 3, H, W)."""
         n, t, c, h, w = lrs.shape
@@ -174,10 +185,10 @@ class BasicVSRNet(nn.Module):
             # Optical flow is computed in the precision of the SPyNet weights (kept FP32 under FP16
             # inference: small flow errors misalign whole features; measured +PSNR vs all-FP16).
             flow_dtype = self.spynet.mean.dtype
-            lrs_1 = lrs[:, :-1].reshape(-1, c, h, w).to(flow_dtype)
-            lrs_2 = lrs[:, 1:].reshape(-1, c, h, w).to(flow_dtype)
-            flows_backward = self.spynet(lrs_1, lrs_2).view(n, t - 1, 2, h, w).to(lrs.dtype)
-            flows_forward = self.spynet(lrs_2, lrs_1).view(n, t - 1, 2, h, w).to(lrs.dtype)
+            lrs_1 = lrs[:, :-1].reshape(-1, c, h, w)
+            lrs_2 = lrs[:, 1:].reshape(-1, c, h, w)
+            flows_backward = self._flows(lrs_1, lrs_2, flow_dtype).view(n, t - 1, 2, h, w).to(lrs.dtype)
+            flows_forward = self._flows(lrs_2, lrs_1, flow_dtype).view(n, t - 1, 2, h, w).to(lrs.dtype)
         # backward-time propagation (features kept at low resolution)
         backward: list[Tensor] = [lrs.new_empty(0)] * t
         feat = lrs.new_zeros(n, self.mid_channels, h, w)
@@ -231,13 +242,19 @@ class RealBasicVSRNet(nn.Module):
 
     def clean(self, lqs: Tensor) -> Tensor:
         n, t, c, h, w = lqs.shape
+        flat = lqs.reshape(-1, c, h, w)
         for _ in range(3):  # at most three cleaning passes, as in the paper
-            flat = lqs.reshape(-1, c, h, w)
-            residues = self.image_cleaning(flat)
-            lqs = (flat + residues).view(n, t, c, h, w)
-            if torch.mean(torch.abs(residues)) < self.dynamic_refine_thres:
+            cleaned = []
+            residue_sum = flat.new_zeros((), dtype=torch.float32)
+            for s in range(0, flat.shape[0], FRAME_GROUP):  # per-frame network: a few frames per call
+                part = flat[s : s + FRAME_GROUP]
+                residues = self.image_cleaning(part)
+                residue_sum += residues.abs().sum(dtype=torch.float32)
+                cleaned.append(part + residues)
+            flat = torch.cat(cleaned)
+            if residue_sum / flat.numel() < self.dynamic_refine_thres:  # mean over all frames, as before
                 break
-        return lqs
+        return flat.view(n, t, c, h, w)
 
     def iter_outputs(self, lqs: Tensor) -> Iterator[tuple[int, Tensor]]:
         yield from self.basicvsr.iter_outputs(self.clean(lqs))

@@ -5,8 +5,8 @@ from pathlib import Path
 import pytest
 
 from neuralframe.api.paths import PathNotAllowed, check_input, check_output, safe_filename, within
-from neuralframe.api.store import JobStore
 from neuralframe.core.job import JobSpec
+from neuralframe.db.store import JobStore
 
 
 def spec(tmp_path: Path, name: str = "a") -> JobSpec:

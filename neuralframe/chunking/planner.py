@@ -54,6 +54,8 @@ class ChunkPlan:
             "chunk_frames": self.chunk_frames,
             "total_frames": self.total_frames,
             "scene_aligned_boundaries": sum(1 for c in self.chunks if c.scene_cut_before),
+            "boundaries": [c.start for c in self.chunks[1:]],
+            "cut_boundaries": [c.start for c in self.chunks[1:] if c.scene_cut_before],
             "notes": list(self.notes),
         }
 

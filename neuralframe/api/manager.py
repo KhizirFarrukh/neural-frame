@@ -14,9 +14,9 @@ import time
 from collections.abc import Callable
 from typing import Any
 
-from neuralframe.api.store import RESUMABLE_STATES, JobStore
 from neuralframe.config import Settings
 from neuralframe.core.job import JobRunner, JobSpec, ProgressEvent
+from neuralframe.db.store import RESUMABLE_STATES, JobStore
 from neuralframe.errors import ErrorCode, JobCancelled, NeuralFrameError
 from neuralframe.log import get_logger
 

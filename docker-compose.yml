@@ -1,0 +1,26 @@
+# NeuralFrame job service + web UI with GPU access.
+#   docker compose up -d        -> http://127.0.0.1:8765
+# Put input files in ./data; outputs are written there too. Models and TensorRT engines are cached in the
+# named volume, so they are downloaded / built once.
+services:
+  neuralframe:
+    build: .
+    image: neuralframe:latest
+    ports:
+      - "127.0.0.1:8765:8765" # local only: the API has no authentication
+    volumes:
+      - ./data:/data
+      - neuralframe-cache:/cache
+    environment:
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility,video # "video" exposes NVENC/NVDEC
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  neuralframe-cache:

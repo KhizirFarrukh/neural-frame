@@ -19,8 +19,8 @@ playwright_api = pytest.importorskip("playwright.sync_api")
 
 from neuralframe.api.app import create_app  # noqa: E402
 from neuralframe.api.manager import JobManager  # noqa: E402
-from neuralframe.api.store import JobStore  # noqa: E402
 from neuralframe.config import Settings  # noqa: E402
+from neuralframe.db.store import JobStore  # noqa: E402
 from tests.conftest import ClipFactory  # noqa: E402
 
 pytestmark = pytest.mark.browser

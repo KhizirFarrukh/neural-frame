@@ -67,9 +67,20 @@ def test_decoder_falls_back_mid_stream_without_gaps(
                 raise NeuralFrameError(ErrorCode.DECODE_FAILED, "simulated device loss")
             yield frame
 
+    original_command = decoder_mod.FrameDecoder.command
+
+    def software_command(self: decoder_mod.FrameDecoder) -> list[str]:
+        # Keep the plan "hardware" (that is what the fallback logic keys on) but run FFmpeg without device
+        # flags, so the injected mid-stream failure is the only failure, on any machine or CI runner.
+        cmd = original_command(self)
+        if "-hwaccel" in cmd:
+            i = cmd.index("-hwaccel")
+            del cmd[i : i + 2]
+        return cmd
+
     monkeypatch.setattr(decoder_mod.FrameDecoder, "frames", flaky)
-    # "d3d11va"/"cuda" would be real hardware; the flaky hook only cares that hwaccel is set.
-    plan = DecodePlan(fmt, hwaccel="d3d11va" if __import__("sys").platform == "win32" else "vaapi")
+    monkeypatch.setattr(decoder_mod.FrameDecoder, "command", software_command)
+    plan = DecodePlan(fmt, hwaccel="cuda")
     dec = ResilientDecoder(tools, src, v.index, plan).start()
     got = [(f.index, f.pts, f.data.tobytes()) for f in dec.frames()]
     dec.close()

@@ -54,6 +54,11 @@ def ensure_weights(
             return path
         log.warning("cached weights failed SHA256 check; downloading again", path=str(path))
         path.unlink()
+    from neuralframe.bundle import bundled
+
+    shipped = bundled("models", spec.id, spec.weights.filename)  # weights included in a packaged release
+    if shipped is not None and sha256_of(shipped) == spec.weights.sha256:
+        return shipped
 
     path.parent.mkdir(parents=True, exist_ok=True)
     partial = path.with_suffix(path.suffix + ".part")

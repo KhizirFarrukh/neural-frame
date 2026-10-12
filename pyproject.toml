@@ -44,9 +44,11 @@ onnx-gpu = ["onnx>=1.16", "onnxruntime-gpu>=1.18"]
 onnx-directml = ["onnx>=1.16", "onnxruntime-directml>=1.18"]
 tensorrt = ["tensorrt-cu13>=10.0,<11"]
 tensorrt-cu12 = ["tensorrt-cu12>=10.0,<11"]
-lpips = ["lpips>=0.1.4"]
+lpips = ["lpips>=0.1.4", "torchvision", "scipy"]
 # Desktop application (`neuralframe-gui`).
 gui = ["pyside6-essentials>=6.7"]
+# Windows release build (packaging/windows/build_release.py).
+release = ["pyinstaller>=6.10"]
 dev = [
   "pytest>=8",
   "pytest-benchmark>=4",
@@ -55,6 +57,7 @@ dev = [
   "mypy>=1.10",
   "ruff>=0.5",
   "types-PyYAML",
+  "types-psutil",
 ]
 
 [project.scripts]
@@ -140,6 +143,7 @@ module = [
   "neuralframe.models.*",
   "neuralframe.framegen.*",
   "neuralframe.api.*",
+  "neuralframe.db.*",
   "neuralframe.gui.*",
   "neuralframe.config",
   "neuralframe.errors",

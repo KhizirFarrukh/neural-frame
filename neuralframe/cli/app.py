@@ -552,6 +552,83 @@ def models_export(
 
 
 # -------------------------------------------------------------------------------------------------------
+# benchmark / compare
+# -------------------------------------------------------------------------------------------------------
+
+
+@app.command()
+def benchmark(
+    ctx: typer.Context,
+    model: str = typer.Option(..., "--model", "-m", help="Model id."),
+    resolution: str = typer.Option("480p", "--resolution", "-r", help="360p 480p 540p 720p 1080p 1440p 2160p"),
+    frames: int = typer.Option(300, "--frames", "-n", min=8),
+    target: str | None = typer.Option(None, "--target", "-t", help="Output size (default 4k)."),
+    backend: str | None = typer.Option(None, "--backend", help="auto | tensorrt | torch | onnxruntime"),
+    fps: str | None = typer.Option(None, "--fps", help="Also run frame generation to this rate."),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Measure throughput on a generated clip: fps, peak VRAM, GPU utilisation and per-stage fps."""
+    from neuralframe.quality.benchmark import RESOLUTIONS, BenchConfig, markdown_table, run_benchmark
+
+    if resolution not in RESOLUTIONS:
+        raise typer.BadParameter(f"resolution must be one of {', '.join(RESOLUTIONS)}")
+    cfg = BenchConfig(model=model, resolution=resolution, target=target, frames=frames, backend=backend, fps=fps)
+    try:
+        with console.status(f"benchmarking {cfg.label} ({frames} frames)..."):
+            row = run_benchmark(_state(ctx).settings, cfg)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    if as_json:
+        out.print_json(json.dumps(row))
+        return
+    out.print(markdown_table([row]), soft_wrap=True)
+    if row["engine_build_s"]:
+        console.print(f"[dim]one-time TensorRT engine build: {row['engine_build_s']:.0f} s (not in the fps)[/]")
+
+
+@app.command()
+def compare(
+    ctx: typer.Context,
+    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Source video or image."),
+    output_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="NeuralFrame result."),
+    frame: int = typer.Option(0, "--frame", "-f", min=0, help="Source frame number."),
+    out_file: Path | None = typer.Option(None, "--out", "-o", help="PNG to write."),
+    crop: str | None = typer.Option(None, "--crop", help="x,y,w,h in output pixels (e.g. 800,300,480,270)."),
+    zoom: int = typer.Option(1, "--zoom", min=1, max=8, help="Enlarge the crop (nearest neighbour)."),
+) -> None:
+    """Write a side-by-side PNG: source (bicubic to the output size) | NeuralFrame."""
+    from neuralframe.core.preview import colour_match_filter, frame_png, frame_time, labelled_side_by_side
+    from neuralframe.io.ffmpeg import locate_ffmpeg
+    from neuralframe.io.probe import probe
+
+    settings = _state(ctx).settings
+    try:
+        tools = locate_ffmpeg(settings.ffmpeg.ffmpeg, settings.ffmpeg.ffprobe)
+        media = probe(input_path, tools)
+        out_video = probe(output_path, tools).require_video()
+        report_path = output_path.with_name(output_path.stem + ".report.json")
+        report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else None
+        seconds = frame_time(media, frame)
+        size = (out_video.width, out_video.height)
+        before = frame_png(tools, input_path, seconds, size, colour_match_filter(report))
+        after = frame_png(tools, output_path, seconds)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    box = None
+    if crop:
+        try:
+            x, y, w, h = (int(v) for v in crop.split(","))
+        except ValueError as exc:
+            raise typer.BadParameter("--crop takes x,y,w,h") from exc
+        box = (x, y, x + w, y + h)
+    target = out_file or output_path.with_name(f"{output_path.stem}_compare_f{frame}.png")
+    labelled_side_by_side(before, after, target, box=box, zoom=zoom)
+    console.print(f"wrote {target}")
+
+
+# -------------------------------------------------------------------------------------------------------
 # gui / serve / queue
 # -------------------------------------------------------------------------------------------------------
 
@@ -584,7 +661,7 @@ def serve(
 
     from neuralframe.api.app import create_app
     from neuralframe.api.manager import JobManager
-    from neuralframe.api.store import JobStore
+    from neuralframe.db.store import JobStore
 
     settings = _state(ctx).settings
     host = host or settings.api.host

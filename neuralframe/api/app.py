@@ -20,12 +20,12 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationError
 from neuralframe import __version__
 from neuralframe.api.manager import JobManager
 from neuralframe.api.paths import PathNotAllowed, check_input, check_output, safe_filename, within
-from neuralframe.api.store import TERMINAL_STATES, JobStore
 from neuralframe.config import Settings, builtin_presets
 from neuralframe.core.job import JobSpec, media_summary
 from neuralframe.core.naming import suggest_output
 from neuralframe.core.planning import TargetSpec
 from neuralframe.core.preview import colour_match_filter, frame_png, frame_time, side_by_side
+from neuralframe.db.store import TERMINAL_STATES, JobStore
 from neuralframe.errors import ErrorCode, NeuralFrameError
 from neuralframe.io.ffmpeg import FFmpegTools, locate_ffmpeg
 from neuralframe.io.probe import probe

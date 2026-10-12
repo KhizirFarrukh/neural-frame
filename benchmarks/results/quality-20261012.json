@@ -1,0 +1,215 @@
+{
+  "hardware": {
+    "neuralframe": "0.1.0",
+    "platform": "Windows-11-10.0.26200-SP0",
+    "cpu": "AMD Ryzen 5 7640HS w/ Radeon 760M Graphics",
+    "ram_gb": 15.2,
+    "python": "3.12.10",
+    "nvidia_driver": "617.42",
+    "cuda_driver": "13.4",
+    "torch": "2.14.1+cu130",
+    "gpu": "NVIDIA GeForce RTX 4060 Laptop GPU",
+    "vram_gb": 8.0,
+    "tensorrt": "10.16.1.11"
+  },
+  "reference": {
+    "source": "Sintel trailer (c) Blender Foundation | durian.blender.org, CC BY 3.0",
+    "sha256": "34bbd52a4b89fdf63c8ace50b268da26653a59508288100cd3c23de276db7931",
+    "segment": "32.5s + 6.0s, 1920x816 (letterbox removed)"
+  },
+  "scenarios": {
+    "x4": {
+      "input": "480x204",
+      "crf": null,
+      "rows": {
+        "ffmpeg bicubic": {
+          "frames": 144,
+          "psnr_y": 39.954,
+          "ssim_y": 0.98282,
+          "vmaf": 69.845,
+          "lpips": 0.1029,
+          "flicker": 0.3193
+        },
+        "ffmpeg lanczos": {
+          "frames": 144,
+          "psnr_y": 40.184,
+          "ssim_y": 0.98301,
+          "vmaf": 73.012,
+          "lpips": 0.1018,
+          "flicker": 0.3281
+        },
+        "NeuralFrame realesrgan-x4plus": {
+          "frames": 144,
+          "psnr_y": 39.242,
+          "ssim_y": 0.97608,
+          "vmaf": 86.726,
+          "lpips": 0.0998,
+          "flicker": 0.787,
+          "seam_ratio": 0.8061711580174798,
+          "seam_ratio_vs_baseline": 1.0407271876183508,
+          "fps": 6.79,
+          "backend": "tensorrt"
+        },
+        "NeuralFrame realesr-animevideov3": {
+          "frames": 144,
+          "psnr_y": 37.508,
+          "ssim_y": 0.97968,
+          "vmaf": 81.831,
+          "lpips": 0.0877,
+          "flicker": 0.6161,
+          "seam_ratio": 0.7835767622898736,
+          "seam_ratio_vs_baseline": 1.011558937566644,
+          "fps": 29.07,
+          "backend": "tensorrt"
+        },
+        "NeuralFrame realbasicvsr-x4": {
+          "frames": 144,
+          "psnr_y": 34.959,
+          "ssim_y": 0.93031,
+          "vmaf": 92.37,
+          "lpips": 0.2526,
+          "flicker": 1.675,
+          "seam_ratio": 0.8257201790475365,
+          "seam_ratio_vs_baseline": 1.0659640091976978,
+          "fps": 4.18,
+          "backend": "torch"
+        },
+        "NeuralFrame lanczos": {
+          "frames": 144,
+          "psnr_y": 40.2,
+          "ssim_y": 0.98315,
+          "vmaf": 72.79,
+          "lpips": 0.1002,
+          "flicker": 0.3191,
+          "fps": 35.11,
+          "backend": "-"
+        }
+      },
+      "gallery": [
+        "x4-realesrgan-x4plus.png",
+        "x4-realesr-animevideov3.png",
+        "x4-realbasicvsr-x4.png",
+        "x4-ground-truth.png"
+      ]
+    },
+    "x4-compressed": {
+      "input": "480x204",
+      "crf": 28,
+      "rows": {
+        "ffmpeg bicubic": {
+          "frames": 144,
+          "psnr_y": 37.247,
+          "ssim_y": 0.97135,
+          "vmaf": 44.481,
+          "lpips": 0.1739,
+          "flicker": 0.7243
+        },
+        "ffmpeg lanczos": {
+          "frames": 144,
+          "psnr_y": 37.318,
+          "ssim_y": 0.97122,
+          "vmaf": 46.082,
+          "lpips": 0.1733,
+          "flicker": 0.7314
+        },
+        "NeuralFrame realesrgan-x4plus": {
+          "frames": 144,
+          "psnr_y": 37.241,
+          "ssim_y": 0.96898,
+          "vmaf": 65.517,
+          "lpips": 0.1307,
+          "flicker": 0.9005,
+          "seam_ratio": 0.8258473691765708,
+          "seam_ratio_vs_baseline": 1.0389887867432182,
+          "fps": 6.61,
+          "backend": "tensorrt"
+        },
+        "NeuralFrame realesr-animevideov3": {
+          "frames": 144,
+          "psnr_y": 35.856,
+          "ssim_y": 0.97201,
+          "vmaf": 62.94,
+          "lpips": 0.1223,
+          "flicker": 0.7252,
+          "seam_ratio": 0.8066676752246612,
+          "seam_ratio_vs_baseline": 1.0148590411110805,
+          "fps": 31.35,
+          "backend": "tensorrt"
+        },
+        "NeuralFrame realbasicvsr-x4": {
+          "frames": 144,
+          "psnr_y": 33.016,
+          "ssim_y": 0.91032,
+          "vmaf": 76.238,
+          "lpips": 0.3068,
+          "flicker": 1.8631,
+          "seam_ratio": 0.8343664754057663,
+          "seam_ratio_vs_baseline": 1.049706573316824,
+          "fps": 4.99,
+          "backend": "torch"
+        }
+      },
+      "gallery": [
+        "x4-compressed-realesrgan-x4plus.png",
+        "x4-compressed-realesr-animevideov3.png",
+        "x4-compressed-realbasicvsr-x4.png",
+        "x4-compressed-ground-truth.png"
+      ]
+    },
+    "x2": {
+      "input": "960x408",
+      "crf": null,
+      "rows": {
+        "ffmpeg bicubic": {
+          "frames": 144,
+          "psnr_y": 45.472,
+          "ssim_y": 0.99416,
+          "vmaf": 91.338,
+          "lpips": 0.0324,
+          "flicker": 0.1661
+        },
+        "ffmpeg lanczos": {
+          "frames": 144,
+          "psnr_y": 45.91,
+          "ssim_y": 0.99438,
+          "vmaf": 92.772,
+          "lpips": 0.0319,
+          "flicker": 0.1711
+        },
+        "NeuralFrame realesrgan-x2plus": {
+          "frames": 144,
+          "psnr_y": 42.888,
+          "ssim_y": 0.9841,
+          "vmaf": 92.221,
+          "lpips": 0.0789,
+          "flicker": 0.7477,
+          "seam_ratio": 0.7989277532855049,
+          "seam_ratio_vs_baseline": 1.027007463900374,
+          "fps": 6.59,
+          "backend": "tensorrt"
+        },
+        "NeuralFrame lanczos": {
+          "frames": 144,
+          "psnr_y": 45.949,
+          "ssim_y": 0.99446,
+          "vmaf": 92.679,
+          "lpips": 0.0256,
+          "flicker": 0.1648,
+          "fps": 41.0,
+          "backend": "-"
+        }
+      },
+      "gallery": [
+        "x2-realesrgan-x2plus.png",
+        "x2-ground-truth.png"
+      ]
+    }
+  },
+  "tile_seam": {
+    "model": "realesrgan-x4plus",
+    "tile": 128,
+    "overlap": 32,
+    "frames": 8,
+    "psnr_tiled_vs_whole_db": 55.88
+  }
+}

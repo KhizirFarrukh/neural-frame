@@ -938,8 +938,16 @@ class JobRunner:
             self._emit("failed", str(exc))
             raise
         except Exception as exc:
-            self._emit("failed", str(exc))
-            raise NeuralFrameError(ErrorCode.INTERNAL, f"unexpected error: {exc}") from exc
+            if type(exc).__name__ in ("InferenceOOM", "OutOfMemoryError"):  # without importing torch here
+                error = NeuralFrameError(
+                    ErrorCode.OOM_UNRECOVERABLE, f"the GPU ran out of memory and could not adapt further: {exc}",
+                    hint="close other GPU applications, or use --max-vram-gb, --tile-size or a smaller "
+                         "--chunk-frames (temporal models); finished chunks are kept for --resume",
+                )
+            else:
+                error = NeuralFrameError(ErrorCode.INTERNAL, f"unexpected error: {exc}")
+            self._emit("failed", str(error))
+            raise error from exc
         finally:
             clear_context("job_id")
 
@@ -1200,7 +1208,7 @@ class JobRunner:
             return contextlib.nullcontext()
         from neuralframe.inference.vram import cap_torch_cache
 
-        return cap_torch_cache(devices, self.settings.vram.safety_margin)
+        return cap_torch_cache(devices)
 
     def _sr_chain(
         self,

@@ -587,6 +587,9 @@ class MainWindow(QMainWindow):
     def _on_progress(self, event: ProgressEvent) -> None:
         if self._runner is None or event.job_id != self._runner.job_id:
             return
+        waiting = event.state in ("probing", "planning") and event.frames_done == 0
+        # Busy animation while planning (downloads, one-time TensorRT engine builds): never look frozen.
+        self.progress.setRange(0, 0 if waiting else 1000)
         self.progress.setValue(int(event.percent * 10))
         labels = {"probing": "Reading the input", "planning": "Planning", "running": "Processing",
                   "muxing": "Writing the output file", "verifying": "Checking the output"}
@@ -602,6 +605,7 @@ class MainWindow(QMainWindow):
             self.stages_label.setText("  -  ".join(f"{s.name} {s.busy_fps:.1f} fps" for s in event.stages))
 
     def _finish(self, state: str, exc: BaseException | None = None, result: JobResult | None = None) -> None:
+        self.progress.setRange(0, 1000)
         if self._job_thread is not None:
             self._job_thread.join(5)
         self._job_thread = None

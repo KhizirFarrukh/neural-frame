@@ -68,3 +68,29 @@ def side_by_side(left_png: bytes, right_png: bytes) -> bytes:
     buf = io.BytesIO()
     canvas.save(buf, format="PNG")
     return buf.getvalue()
+
+
+def labelled_side_by_side(before: bytes, after: bytes, target: Path, *,
+                          box: tuple[int, int, int, int] | None = None, zoom: int = 1,
+                          labels: tuple[str, str] = ("bicubic", "NeuralFrame")) -> None:
+    """Labelled side-by-side image (optionally a zoomed crop) for comparisons and the gallery."""
+    from PIL import Image, ImageDraw
+
+    images = []
+    for data, label in zip((before, after), labels, strict=True):
+        img = Image.open(io.BytesIO(data)).convert("RGB")
+        if box is not None:
+            img = img.crop(box)
+        if zoom > 1:
+            img = img.resize((img.width * zoom, img.height * zoom), Image.Resampling.NEAREST)
+        draw = ImageDraw.Draw(img)
+        bbox = draw.textbbox((0, 0), label)
+        draw.rectangle((6, 6, 14 + bbox[2], 12 + bbox[3]), fill=(0, 0, 0))
+        draw.text((10, 8), label, fill=(255, 255, 255))
+        images.append(img)
+    gap = 4
+    canvas = Image.new("RGB", (images[0].width + images[1].width + gap, max(i.height for i in images)), (255,) * 3)
+    canvas.paste(images[0], (0, 0))
+    canvas.paste(images[1], (images[0].width + gap, 0))
+    target.parent.mkdir(parents=True, exist_ok=True)
+    canvas.save(target)

@@ -221,6 +221,37 @@ desktop GUI application.
 - The reference job (480p -> 1080p + 59.94 fps, animevideov3) takes 21 s from the GUI, the same throughput
   as the CLI and the service (all three run the same `JobRunner`).
 
+### Findings from Milestone 9
+
+- Averaging per-frame PSNR lets identical frames dominate: a segment with a fade to black (22 pure black
+  frames at a capped 100 dB) reported 49.9 dB for bicubic 4x; MSE pooled over all frames gives 36.2 dB.
+  The evaluation pools MSE, and uses a fade-free segment with the letterbox cropped away.
+- A raw chunk-boundary seam ratio is noisy with few boundaries and depends on what the content does at
+  those frames; normalising by the same ratio of the chunk-free bicubic baseline gives 1.01-1.07 for every
+  model (spec threshold 1.2).
+- GAN models trade PSNR for perceptual quality: on compressed input they add 18-32 VMAF points and cut
+  LPIPS by 25-30 % while PSNR stays at bicubic level. RealBasicVSR has the highest VMAF but the worst
+  LPIPS and flicker (strong sharpening, invented texture) - VMAF alone would have ranked it first.
+- The PyTorch cache cap from M6 subtracted the safety margin a second time and turned would-be spills into
+  crashes (ONNX Runtime, RealBasicVSR and frame generation rows failed; TensorRT throughput halved from
+  allocator thrash). The cap now keeps only 5 % (<= 512 MB) headroom; PyTorch OOMs around the backend
+  call enter the recovery ladder, ONNX Runtime's arena grows by request instead of powers of two, and an
+  unrecoverable OOM is reported as `OOM_UNRECOVERABLE` with a hint instead of an internal error.
+- RealBasicVSR ran SPyNet and the cleaning network over the whole chunk at once (a single 2.7 GB
+  allocation at 480p). Both are per-frame, so they now run four frames per call: identical output, peak
+  memory independent of the chunk length; 480p -> 1080p now runs at 1.3 fps in 6.9 GB.
+- Windows file names ignore case: `neuralframe.exe` silently overwrote `NeuralFrame.exe` in the release
+  folder (the GUI self-test caught it); the command line is `neuralframe-cli.exe`.
+- The Windows release is 5.3 GB unpacked (PyTorch 2.8 GB, TensorRT 2.2 GB); dropping TensorRT builder
+  resources for datacenter GPUs and build-time files saves 0.9 GB; the portable zip is 3.7 GB. GitHub
+  release assets are limited to 2 GB per file, so publishing there needs a split archive, the installer's
+  disk spanning (Inno Setup) or the `--no-tensorrt` build.
+- Ubuntu 24.04 images already have a `ubuntu` user with UID 1000; the container runs as that user.
+- The Docker image works under Docker Desktop on Windows (WSL2 GPU paravirtualisation: TensorRT, NVDEC and
+  NVENC all functional) but ran animevideov3 480p -> 1080p at 11.9 fps vs 35.2 fps natively, encode-bound;
+  a native Linux host with the NVIDIA Container Toolkit could not be measured here. Building the 18.8 GB
+  image next to a GPU job exhausted the 15 GB of RAM and crashed the Docker engine: build images alone.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -325,15 +356,21 @@ desktop GUI application.
 - [x] GUI tests (pytest-qt, offscreen): defaults, video and image flows, scan + frame generation,
       cancel/resume with chunk reuse, input validation
 
-### M9 — Quality, benchmarks, docs
-- [ ] PSNR/SSIM (NumPy), LPIPS (optional), VMAF (libvmaf) vs bicubic/Lanczos baselines
-- [ ] Seam test (chunk-boundary MAD ratio), tile-seam test (> 45 dB), flicker metric
-- [ ] `benchmarks/run.py` → Markdown + JSON results with hardware info
-- [ ] Optional: RIFE ONNX/TensorRT export (timestep input) if it beats PyTorch FP16 inside the pipeline
-- [ ] README (Mermaid diagram, quickstart pip + Docker, CLI/config reference, hardware matrix,
-      troubleshooting, assumptions & limitations), ARCHITECTURE, BENCHMARKS, GALLERY, MODEL_CARDS
-- [ ] Dockerfile + docker-compose verified with the NVIDIA runtime; CI workflow (CPU path)
-- [ ] Reference case run + final acceptance checklist
+### M9 — Quality, benchmarks, docs, release
+- [x] PSNR/SSIM (NumPy, SSIM cross-checked against an independent implementation), LPIPS (optional),
+      VMAF (libvmaf) vs bicubic/Lanczos baselines on a real CC BY clip (`benchmarks/quality.py`)
+- [x] Seam test (chunk-boundary change ratio normalised by the chunk-free baseline), tile-seam test
+      (> 45 dB), flicker metric (temporal noise in static regions)
+- [x] `benchmarks/run.py` + `neuralframe benchmark` → Markdown + JSON results with hardware info;
+      `neuralframe compare` side-by-side crops
+- [ ] Optional: RIFE ONNX/TensorRT export (timestep input) - not done; documented as a limitation
+- [x] README (Mermaid diagram, quickstart Windows app / Docker / pip, CLI/config reference, hardware
+      matrix, troubleshooting, assumptions & limitations), ARCHITECTURE, BENCHMARKS, GALLERY, MODEL_CARDS
+- [x] Dockerfile + docker-compose; CI workflow (CPU path + C++ tests on Linux and Windows)
+- [x] Windows release for non-technical users (`packaging/windows/build_release.py`): PyInstaller folder
+      with `NeuralFrame.exe` + `neuralframe-cli.exe`, pinned FFmpeg, bundled models, smoke-tested as a user
+      runs it, portable zip (+ Inno Setup installer when available)
+- [x] Reference case run + final acceptance checklist
 
 ## 6. Working agreement
 
