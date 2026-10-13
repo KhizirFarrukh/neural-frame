@@ -85,6 +85,13 @@ Standing constraints from the user: no test renders / GPU work while their own j
 not touch the `build/` folder while they use the app from it; delete the Docker image after testing that
 it builds; never add AI attribution anywhere; push only when asked.
 
+### 1.4 Scope additions (requested 2026-10-13, third round)
+
+"Do those too, don't worry about performance issues. Do the SeedVR2 too. Also don't test right now":
+integrate the generative and vendor engines from the research (section 4), SeedVR2 included; speed is not
+a reason to leave one out. No tests, renders or GPU work now (testing comes later, with the user's OK); no
+model downloads by the developer - every engine and its weights are installed only when a user chooses it.
+
 ## 2. Development machine (capability check, 2026-10-12)
 
 | Item | Detected |
@@ -560,10 +567,38 @@ model manager UI -> CLI/web -> build changes -> tests -> docs.
 - [ ] Later, with the user's OK for GPU work: measure the new models, calibrate ranks so automatic choice
       can use them; full gate; release and Docker build tests (delete the Docker image afterwards)
 
-### M12 — Generative restoration (proposed, needs the user's decision)
-- [ ] One-step diffusion video restoration engine for very low-quality sources (candidates in section 4:
-      SeedVR2 3B, FlashVSR, SwiftVR), optional download, quantised weights + block swapping for 8 GB GPUs
-- [ ] Optional face restoration pass for small faces (GFPGAN-class, face detection + paste-back)
+### M12 — Generative restoration engines (requested 2026-10-13: "do those too", SeedVR2 included)
+Planned before the work (section 1.4). Code only for now: **no tests run, nothing downloaded** until the
+user allows it.
+- [ ] Engine framework (`neuralframe/engines/`): each engine is an entry in the model lists (same
+      "purpose - speed (name)" labels, its own group "Generative restoration") with licence, sizes and
+      status; installed on demand into its **own isolated environment** (pinned Python packages, upstream
+      code pinned to a commit and checksum), so its dependencies never clash with NeuralFrame's
+- [ ] Installer: a pinned `uv` binary (downloaded on first use, SHA256-checked) creates the environment and
+      installs packages; progress, cancel and remove like model downloads; works from source and from the
+      Windows app (no Python needed on the computer)
+- [ ] Weights with several files per engine (diffusion models: transformer, VAE, text embeddings...),
+      downloaded on demand through the model library (progress, resume, checksum, local files, updates)
+- [ ] Two-pass pipeline: (1) the engine restores scene-aligned chunks of the input (resumable, cancellable,
+      progress per chunk and per frame where the engine reports it); (2) the normal pipeline makes the
+      exact output size, colour, optional frame generation, encoding, and muxes the original audio,
+      subtitles and chapters (sync check as always). Pictures: engine, then the normal image path
+- [ ] Video engines: SeedVR2 3B / 7B (FP16, FP8, GGUF Q4/Q8; block swap and VAE tiling for small GPUs),
+      FlashVSR v1.1, DOVE, SwiftVR (research licence: personal use only), NVIDIA RTX Video Super Resolution
+      (`nvidia-vfx`, proprietary, installed only on request)
+- [ ] Picture engines: OSEDiff, HYPIR (non-commercial), SUPIR (non-commercial, very large), LucidFlux
+      (FLUX.1-dev licence, needs a Hugging Face token), InvSR (non-commercial)
+- [ ] Face restoration as an optional extra step ("Restore faces": GFPGAN 1.4, RestoreFormer++, CodeFormer
+      (non-commercial), KEEP for video (non-commercial)), applied to the restored/upscaled frames
+- [ ] Desktop app: generative engines in the model list and Models window (Install / Remove / progress /
+      Cancel), clear warnings that they invent detail and are very slow, "Restore faces" option, a
+      Hugging Face token field where an engine needs one
+- [ ] Command line: `-m seedvr2-3b` etc., `--faces gfpgan`, `neuralframe engines list/install/remove`;
+      web UI lists them
+- [ ] Docs: README (what generative restoration does and does not do, licences, disk/VRAM needs), model
+      cards, packaged README, plan findings
+- [ ] Tests written for later (CPU, fake engine with a tiny local "environment"), not run now
+- [ ] Later, with the user's OK: install and run each engine on the GPU, measure, fix what real runs reveal
 
 ## 6. Working agreement
 
