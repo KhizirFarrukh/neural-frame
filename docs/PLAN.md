@@ -55,6 +55,36 @@ desktop GUI application.
 3. **Automatic model choice**: analyse the video and pick the model that suits it; the presets default to
    it.
 
+### 1.3 Scope additions (requested 2026-10-13, second round)
+
+Requests, in the user's order (kept here so none is lost):
+
+1. Commit the model update (M10) - done as `57e8afa` on `develop` (not pushed).
+2. Research more AI upscalers: models that turn very low-quality video and images (144p, 240p, 360p, 480p)
+   into convincing 4K, and "hyper-realistic" generative models (findings: section 4, M11 research).
+3. **Plain-language model names**: every list shows what the model is for, then its name in brackets
+   (`HD anime to 4K, fastest - fast (2x-animejanai-hd-v3-superultracompact)`), so people who know nothing
+   about models can choose by content and people who do can choose by name.
+4. **A massive variety of models**, grouped by purpose: filmed video & photos; old, damaged or very low
+   quality; cartoons & anime; AI images & art; games, textures & pixel art; text, documents & comics.
+5. **No model is downloaded up front** - not by the developer, not by the release build. A model is
+   downloaded when the user chooses (or automatic choice picks) it, before the job runs, with a progress
+   bar showing details (MB done / total, speed, time left) and a way to cancel.
+6. **Building the Windows app downloads no models by default** (opt-in flag to bundle some).
+7. **Model manager** in the app (menu): every model with what it is for, size and status; a Download button
+   on rows that are not downloaded; a progress bar on that row while it downloads; Cancel; Delete to free
+   space.
+8. **Use a locally stored model file**: a model the user already downloaded and keeps somewhere else can
+   be linked instead of downloaded again (checked before use); folders to search can be configured.
+9. **Updates**: models whose source supports it (Hugging Face files, GitHub release assets) are checked
+   for a newer version; the manager shows "update available" and installs it on request.
+10. **Make the app very user friendly** throughout.
+11. Add all of this to the plan before working on it (this section and M11).
+
+Standing constraints from the user: no test renders / GPU work while their own jobs run (ask first); do
+not touch the `build/` folder while they use the app from it; delete the Docker image after testing that
+it builds; never add AI attribution anywhere; push only when asked.
+
 ## 2. Development machine (capability check, 2026-10-12)
 
 | Item | Detected |
@@ -287,6 +317,49 @@ desktop GUI application.
   `.safetensors` and `.ckpt` are accepted, never `.pt` (spandrel opens those as TorchScript, which can
   carry code). A broken user `models.yaml` is skipped entry by entry instead of breaking every command.
 
+### Research: upscalers for very low-quality sources and generative restoration (2026-10-13)
+
+What exists (sources checked 2026-10-13; licences from the projects' own pages where stated):
+
+- **No model recovers detail that was never recorded.** Going from 144p-480p to 4K (4.5x-15x) means the
+  model *invents* plausible detail. CNN/transformer upscalers (everything in M10) do this conservatively;
+  generative (diffusion) restorers invent far more - faces, textures, text - which looks "real" but can
+  change what is in the picture.
+- **Video, one-step diffusion** (the current state of the art for badly degraded video):
+  - SeedVR2 (ByteDance, ICLR 2026): Apache-2.0 code; 3B and 7B models. Official code is multi-GPU
+    (one H100-80G for 100 frames of 720p; four for 1080p/2K) and needs flash-attn and apex. The community
+    ComfyUI/standalone runner (Apache-2.0) adds GGUF Q4/Q8 and FP8 weights, block swapping to the CPU and
+    VAE tiling, and documents runs on 8 GB GPUs (slow). An independent study (arXiv 2605.25940, 360p/720p
+    -> 2160p) ranked SeedVR2 (7B), DOVE and Topaz Starlight Mini best, with no clear winner; SeedVR2 took
+    about 11 s per 4K frame on a datacenter GPU and ghosted with small batches.
+  - FlashVSR (CVPR 2026): Apache-2.0, Wan 2.1-based, streaming one-step 4x VSR, ~17 fps at 768x1408 on an
+    A100; its sparse-attention kernel is tuned for A100/A800 and untested on RTX 40/50.
+  - DOVE (NeurIPS 2025): Apache-2.0 code, CogVideoX 1.5-5B (also a 2B version); strong temporal
+    consistency, ~18 s per 4K frame in the study above.
+  - SwiftVR (June 2026): Wan 2.2-TI2V-5B based, 26 fps at 1080p on an RTX 5090, 38 GB peak at 1440p on an
+    H100; code Apache-2.0 but **weights under a research licence** (commercial use needs permission).
+  - Topaz Starlight (commercial, closed): Mini runs locally with >= 10 GB VRAM; reference point only.
+- **Images, generative**: SUPIR (SDXL + 13B LLaVA, ~30 GB VRAM x2, non-commercial terms), HYPIR (SD 2.1
+  LoRA, SIGGRAPH 2025, non-commercial), LucidFlux (Flux.1-dev based: Flux-dev non-commercial licence),
+  OSEDiff (one-step, SD 2.1, Apache-2.0), InvSR (S-Lab non-commercial), AuraSR v2 (GigaGAN-style 4x GAN,
+  600 M parameters, Apache-2.0, loadable by spandrel, FP32 only, trained on 64 px patches).
+- **NVIDIA RTX Video Super Resolution for developers**: `nvidia-vfx` (Python, DLPack/PyTorch interop,
+  Turing+ Tensor Cores, driver >= 570.65) exposes `VideoSuperRes` with 1-4x upscaling, quality levels,
+  denoise/deblur and high-bitrate modes - the "DLSS-like" real-time option. Proprietary licence, terms of
+  redistribution not stated on PyPI; would have to be an optional, user-installed component.
+- **Faces**: GFPGAN-class restoration helps tiny faces most; CodeFormer and the video face model KEEP are
+  S-Lab non-commercial. Needs face detection, alignment and paste-back - a separate pipeline stage.
+- **Community CNN/transformer models (OpenModelDB, 671 entries with licences and SHA256)**: the best fits
+  for low-quality sources are trained on realistic degradations (RealWebPhoto v4 DAT2/DRCT-L, Nomos web
+  photo, VHS2HD, LiveAction SPAN, AniScale/Ani4K/AnimeJaNai for anime). These run in the existing pipeline
+  through spandrel and are the M11 "variety" set.
+
+Recommendation: M11 adds the community models and AuraSR v2 within the current pipeline. A generative
+engine (M12) is worth it only as an optional, separately downloaded component: SeedVR2 3B (Apache-2.0,
+quantised + block swap) is the most practical for an 8 GB card, FlashVSR the fastest on large GPUs;
+SwiftVR and the image models above are excluded or optional because of their licences. Expect minutes per
+4K frame on an 8 GB laptop GPU.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -427,6 +500,52 @@ desktop GUI application.
 - [ ] Measure speed, VRAM per pixel and quality of the new models on the GPU; calibrate `rank`,
       `memory_per_pixel` and the preset speed sets from the results
 - [ ] Full gate (ruff, mypy, pytest incl. GPU, CTest); release build and Docker image build re-tested
+
+### M11 — Model library: plain-language names, many more models, downloads on demand
+Planned 2026-10-13 from section 1.3. Order of work: plan -> registry/naming -> download manager ->
+model manager UI -> CLI/web -> build changes -> tests -> docs.
+- [ ] Registry: `purpose` (plain words) and `category` for every model; one label format everywhere:
+      `purpose - speed (id)`; lists grouped by category; ids accepted case-insensitively (`4x_UltraSharpV2`)
+- [ ] ~50 more models from OpenModelDB and Hugging Face, checksum-pinned, licences recorded; non-commercial
+      ones marked "personal use only"; none chosen automatically until measured (rank 0)
+- [ ] Any model loaded through spandrel pads its input to the size multiple / minimum the network needs
+      (some 2x ESRGAN variants need multiples of 4, DRCT of 16), so registry entries cannot get it wrong
+- [ ] Download manager (`models/library.py`): status per model (not downloaded / downloaded / linked local
+      file / update available), streamed download with progress events (bytes, total, speed, ETA),
+      cancellation, partial-file cleanup, SHA256 check, delete, disk usage
+- [ ] Jobs download a missing model first (also when automatic choice picked it) and report it as a
+      "downloading model" stage with bytes / speed / time left; cancelling the job cancels the download
+- [ ] Local files: link a file the user already has (`models link ID FILE`, "Use a file I have..." in the
+      manager); exact checksum = verified copy, otherwise accepted only if it loads as the same kind of
+      network and scale ("local file, different version"); `models.search_paths` setting for folders
+      to look in
+- [ ] Updates: for models hosted as Hugging Face files or GitHub release assets, compare the published
+      SHA256 with the installed one; "Check for updates" / "Update" in the manager, `models check-updates`
+      / `models update` on the command line; updated pins stored per user, never edited into the registry
+- [ ] Desktop app: Models menu -> Model manager window (search box, category filter, per-row status, size,
+      Download / Cancel / Delete / Use a file I have... / Update, per-row progress bar with details, total
+      disk use, "Check for updates"); the main window says when the selected model still has to be
+      downloaded (size) and offers "Download now"; the job progress shows the download first
+- [ ] User friendliness: plain-language labels and tooltips everywhere, licence notices, clear errors with
+      a retry (offline, disk full, checksum), sizes before downloading, nothing technical required
+- [ ] Command line: `models list` grouped by purpose with status; `models download/delete/link/unlink/
+      check-updates/update`; rich progress bars
+- [ ] Web UI: grouped plain-language model list; job progress shows the model download
+- [ ] Windows release: no models unless `--with-models`; the smoke test uses the developer's model folder
+      read-only through `models.search_paths` (skips neural checks when a model is missing) instead of
+      downloading
+- [ ] Tests (CPU only, local `file://` "downloads" of tiny models): progress, cancel, checksum failure,
+      link/unlink, search paths, update check against mocked APIs, manager window, job download stage
+- [ ] Docs: README (model manager, downloads, local files, updates, model list by purpose), model cards
+      for every new model, packaged README.txt
+- [ ] Research write-up (generative upscalers for very low-quality sources) and a recommendation for M12
+- [ ] Later, with the user's OK for GPU work: measure the new models, calibrate ranks so automatic choice
+      can use them; full gate; release and Docker build tests (delete the Docker image afterwards)
+
+### M12 — Generative restoration (proposed, needs the user's decision)
+- [ ] One-step diffusion video restoration engine for very low-quality sources (candidates in section 4:
+      SeedVR2 3B, FlashVSR, SwiftVR), optional download, quantised weights + block swapping for 8 GB GPUs
+- [ ] Optional face restoration pass for small faces (GFPGAN-class, face detection + paste-back)
 
 ## 6. Working agreement
 
