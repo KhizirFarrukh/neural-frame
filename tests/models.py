@@ -84,3 +84,18 @@ def tiny_rife_model(models_dir: Path, model_id: str = "tiny-rife") -> tuple[Mode
         licence="test-only",
     )
     return spec, path
+
+
+def tiny_swinir_file(folder: Path, name: str = "4x-Tiny_SwinIR.safetensors", *, scale: int = 2) -> Path:
+    """A randomly initialised SwinIR (a transformer, loaded through spandrel like a downloaded model file)
+    small enough to build and run in milliseconds on the CPU."""
+    from safetensors.torch import save_file
+    from spandrel.architectures.SwinIR import SwinIR
+
+    torch.manual_seed(0)
+    net = SwinIR(upscale=scale, img_size=16, window_size=4, embed_dim=12, depths=[1, 1], num_heads=[2, 2],
+                 mlp_ratio=2, upsampler="pixelshuffle" if scale > 1 else "", resi_connection="1conv")
+    folder.mkdir(parents=True, exist_ok=True)
+    path = folder / name
+    save_file({k: v.contiguous() for k, v in net.state_dict().items()}, str(path))
+    return path

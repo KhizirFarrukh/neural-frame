@@ -119,7 +119,7 @@
       </div>
       <div id="modelOpts">
         <label for="model">Model</label>
-        <select id="model"><option value="">Automatic (from preset)</option></select>
+        <select id="model"><option value="">Automatic (analyses the video)</option></select>
       </div>
       <div>
         <label for="preset">Preset</label>
@@ -169,6 +169,7 @@
       <span id="pVram"></span>
     </div>
     <div class="muted" id="pMsg" style="margin-top:6px"></div>
+    <div class="muted" id="pModel" style="margin-top:6px"></div>
     <div class="stages" id="stages"></div>
     <div class="row">
       <button class="ghost" id="cancel">Cancel</button>
@@ -242,7 +243,9 @@ async function loadSystem() {
     const models = await api("GET", "/v1/models");
     for (const m of models.filter(m => m.kind !== "interpolation")) {
       const o = document.createElement("option"); o.value = m.id;
-      o.textContent = `${m.id} (x${m.scale}${m.input !== "single" ? ", " + m.input : ""})`;
+      const extras = [m.speed, m.input !== "single" ? m.input : null, m.origin === "user" ? "added" : null].filter(Boolean);
+      o.textContent = `${m.id} (x${m.scale}${extras.length ? ", " + extras.join(", ") : ""})`;
+      o.title = m.description || "";
       $("model").appendChild(o);
     }
   } catch (e) { $("sys").textContent = "service unavailable: " + e.message; }
@@ -359,12 +362,27 @@ function render(job) {
   $("jobError").textContent = job.error ? job.error.message + (job.error.hint ? "\n(" + job.error.hint + ")" : "") : "";
   const dl = $("download");
   dl.classList.toggle("hidden", job.state !== "done");
-  if (job.state === "done") { dl.href = `/v1/jobs/${job.id}/output`; showCompare(job); }
+  if (job.state === "done") { dl.href = `/v1/jobs/${job.id}/output`; showCompare(job); showModel(job.id); }
+}
+
+// Which model ran (and, for "Automatic", why it was chosen): from the job report.
+async function showModel(jobId) {
+  if (state.modelShown === jobId) return;
+  state.modelShown = jobId;
+  try {
+    const plan = (await api("GET", `/v1/jobs/${jobId}/report`)).plan || {};
+    const choice = plan.model_choice;
+    if (!plan.inference && !choice) return;
+    $("pModel").textContent = "Model: " + plan.model
+      + (choice ? " - chosen automatically: " + (choice.reasons || []).join("; ") : "");
+  } catch (e) { /* the report is optional here */ }
 }
 
 function watch(jobId) {
   if (state.source) state.source.close();
   state.jobId = jobId;
+  state.modelShown = null;
+  $("pModel").textContent = "";
   $("comparePanel").classList.add("hidden");
   const es = new EventSource(`/v1/jobs/${jobId}/events`);
   state.source = es;

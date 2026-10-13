@@ -31,8 +31,13 @@ class TorchBackend(InferenceBackend):
     def load(self, model: ModelSpec, weights: Path, profile: ShapeProfile) -> None:
         configure_determinism(self.deterministic)
         net = load_network(model, weights).to(self.device)
-        if self.dtype == torch.float16:
-            net = net.half()
+        if self.dtype == torch.float16 and getattr(net, "nf_supports_half", True) is False:
+            # The architecture overflows in FP16 (spandrel says so): fall back instead of producing NaNs.
+            from neuralframe.inference.factory import bf16_supported
+
+            self.precision = "bf16" if bf16_supported(self.device) else "fp32"
+        if self.dtype in (torch.float16, torch.bfloat16):
+            net = net.to(self.dtype)
         self._net = net
         self.model = model
 

@@ -99,6 +99,19 @@ block matrix multiplies (4.8x faster than dense matrices with identical output).
 * **Fixed-size tiles** (`chunking/tiling.py`): edge tiles shift inward instead of shrinking, so every
   batch has one shape and TensorRT needs one profile. Tiles overlap and are merged with feathered weights
   that discard the margin; tiled vs whole-frame output differs by > 57 dB PSNR.
+* **Model building** (`inference/archs/`): the Real-ESRGAN family, RealBasicVSR and RIFE are built from
+  the project's own module definitions; the transformer models (HAT, DRCT, DAT, ATD, SwinIR), BSRGAN,
+  RealPLKSR and any model a user adds are built by spandrel from the checkpoint. Those are PyTorch-only
+  (`backends: [torch]` in the registry); models that overflow in FP16 (`fp16: false`) run in BF16 where the
+  GPU supports it natively and FP32 otherwise. A planning estimate of activation memory per input pixel
+  (`memory_per_pixel`) sizes their tiles before the VRAM calibration refines it.
+* **Automatic model choice** (`models/advisor.py`): eight frames spread over the input are measured on
+  the CPU - noise (Immerkaer's estimator on the flatter half of the frame), 8x8 blocking (strongest grid
+  phase vs the median of all eight, so crops do not hide it), bits per pixel against a per-codec
+  threshold, real detail (the strongest downscale whose re-upscale only loses noise) and cartoon look
+  (hard vs soft edge ratio and flat-area share on a thumbnail). Each single-frame model is scored from its
+  `rank`, `content`, `handles`, `speed`, `stills` and scale; the job report records the measurements, the
+  choice and the reasons. Analysis errors never stop a job: the general fast model is used instead.
 
 ## 7. VRAM strategy
 

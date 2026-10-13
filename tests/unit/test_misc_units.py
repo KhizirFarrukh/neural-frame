@@ -164,7 +164,7 @@ def test_settings_yaml_env_and_preset_merge(tmp_path: Path, monkeypatch: Any) ->
     assert s.encode.codec == "av1"
     assert s.encode.quality == 25  # env beats file
     assert s.preset("quality").speed == "medium"
-    assert s.preset("quality").model == "realesrgan-x4plus"  # untouched built-in fields survive
+    assert s.preset("quality").model == "auto"  # untouched built-in fields survive
     assert s.preset("tiny").model == "lanczos"
     with pytest.raises(NeuralFrameError):
         s.preset("nope")

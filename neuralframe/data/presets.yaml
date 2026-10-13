@@ -1,31 +1,33 @@
 # Built-in presets. Each key maps to job defaults; anything set explicitly on a job (CLI flag, API field,
 # GUI control) wins over the preset. Users can override or add presets under `presets:` in config.yaml.
 #
-#   model         registry id of the super-resolution model
+#   model         registry id of the super-resolution model, or "auto": analyse the input and pick the
+#                 best model for it within the speed the preset allows (neuralframe/models/advisor.py)
 #   tile_overlap  spatial tile overlap in input pixels (bigger = safer seams, more compute)
 #   codec         output video codec family: hevc | h264 | av1
 #   speed         encoder speed class mapped per encoder (NVENC p7/p5/p3, x265 slow/medium/fast, ...)
 #   quality       constant-quality value per codec (CRF for software encoders, CQ/QP for hardware ones)
 
 quality:
-  description: Best fidelity. Real-ESRGAN x4plus, wide tile overlap, slow high-quality encode.
-  model: realesrgan-x4plus
+  description: Best fidelity. Automatic model choice including the slow transformer models, wide tile
+    overlap, slow high-quality encode.
+  model: auto
   tile_overlap: 48
   codec: hevc
   speed: slow
   quality: {hevc: 18, h264: 17, av1: 24}
 
 balanced:
-  description: Good fidelity at reasonable speed.
-  model: realesrgan-x4plus
+  description: Good fidelity at reasonable speed. Automatic model choice among fast to slow models.
+  model: auto
   tile_overlap: 32
   codec: hevc
   speed: medium
   quality: {hevc: 21, h264: 19, av1: 28}
 
 fast:
-  description: Throughput first. Real-ESRGAN x2plus, narrow overlap, fast encode.
-  model: realesrgan-x2plus
+  description: Throughput first. Automatic model choice among the fast models, narrow overlap, fast encode.
+  model: auto
   tile_overlap: 16
   codec: hevc
   speed: fast

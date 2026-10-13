@@ -46,9 +46,16 @@ def _self_test(window: Any, app: Any, sample: Path | None, report: Path) -> int:
             if result["cuda"]:
                 result["gpu"] = torch.cuda.get_device_name(0)
         result["tensorrt"] = importlib.util.find_spec("tensorrt") is not None
+        try:
+            import spandrel
+
+            result["spandrel"] = spandrel.__version__
+        except ImportError as exc:  # optional when running from source
+            result["spandrel"] = None
+            result["spandrel_error"] = str(exc)
         models = {}
         for m in window.registry.all():
-            if m.weights is not None:
+            if m.weights is not None and m.bundled and m.origin == "builtin":
                 from neuralframe.bundle import bundled
 
                 local = weights_path(m, window.settings.paths.models()).is_file()
@@ -64,6 +71,13 @@ def _self_test(window: Any, app: Any, sample: Path | None, report: Path) -> int:
                 time.sleep(0.02)
             result["sample_loaded"] = window.media is not None
             result["sample_info"] = window.info_label.text()
+            ready: list[bool] = []
+            window.recommendation_ready.connect(lambda: ready.append(True))
+            deadline = time.monotonic() + 60
+            while not ready and window.recommended is None and time.monotonic() < deadline:
+                app.processEvents()
+                time.sleep(0.02)
+            result["auto_model"] = window.recommended
         result["ok"] = bool(result.get("ffmpeg")) and (sample is None or result.get("sample_loaded", False))
     except Exception as exc:
         result["error"] = f"{type(exc).__name__}: {exc}"

@@ -1,6 +1,6 @@
 """Files shipped next to a packaged (PyInstaller) build: FFmpeg binaries and model weights.
 
-A Windows release is a folder with ``NeuralFrame.exe``, ``neuralframe.exe``, ``ffmpeg/`` and ``models/``.
+A Windows release is a folder with ``NeuralFrame.exe``, ``neuralframe-cli.exe``, ``ffmpeg/`` and ``models/``.
 When running from source these lookups return ``None`` and the normal search applies (configuration,
 ``PATH``, the per-user model cache).
 """

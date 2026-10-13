@@ -47,6 +47,9 @@ tensorrt-cu12 = ["tensorrt-cu12>=10.0,<11"]
 lpips = ["lpips>=0.1.4", "torchvision", "scipy"]
 # Desktop application (`neuralframe-gui`).
 gui = ["pyside6-essentials>=6.7"]
+# Transformer models (HAT, DRCT, DAT, ATD, SwinIR, PLKSR...) and `neuralframe models add` for any model
+# file: networks are built by spandrel. Install torchvision from the same PyTorch index as torch first.
+models = ["spandrel>=0.4,<0.5"]
 # Windows release build (packaging/windows/build_release.py).
 release = ["pyinstaller>=6.10"]
 dev = [
@@ -164,5 +167,5 @@ module = ["neuralframe.inference.archs.*"]
 warn_return_any = false
 
 [[tool.mypy.overrides]]
-module = ["av.*", "tensorrt.*", "pynvml.*", "onnxruntime.*", "onnx.*", "lpips.*", "torchvision.*"]
+module = ["av.*", "tensorrt.*", "pynvml.*", "onnxruntime.*", "onnx.*", "lpips.*", "torchvision.*", "spandrel.*"]
 ignore_missing_imports = true

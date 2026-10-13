@@ -1,12 +1,17 @@
 # NeuralFrame
 
 Local, GPU-accelerated video and image super-resolution with frame generation. NeuralFrame takes a video
-(or an image), upscales it with Real-ESRGAN-family models through TensorRT, ONNX Runtime or PyTorch,
+(or an image), upscales it with AI models - from fast Real-ESRGAN networks to large transformer models
+such as HAT-L, DRCT-L and DAT2 - through TensorRT, ONNX Runtime or PyTorch,
 optionally generates frames up to a constant frame rate with RIFE (repairing dropped and frozen frames on
 the way), and writes a file with the original audio, subtitles and chapters intact and in sync. Everything
 runs on your own computer; nothing is uploaded anywhere.
 
 * **Upscaling** to 4K by default (or 8K, 1440p, 1080p, 2x/3x/4x, any width x height), aspect ratio kept.
+* **Automatic model choice**: each video is analysed (cartoon or filmed, grain, compression, how much
+  real detail it has) and upscaled with the model that suits it, within the time the preset allows.
+  13 AI upscaling models built in, and any model file from [OpenModelDB](https://openmodeldb.info) can be
+  added with one command.
 * **Frame generation** to 60 fps by default (or any rate), with smart repair of dropped and frozen frames
   and no blending across scene cuts.
 * **Fast**: TensorRT FP16 engines, CUDA-stream overlap, NVDEC/NVENC hardware video, a C++ module for
@@ -24,7 +29,8 @@ runs on your own computer; nothing is uploaded anywhere.
 2. [The Windows app (no programming needed)](#2-the-windows-app-no-programming-needed)
 3. [Install from source on Windows](#3-install-from-source-on-windows)
 4. [Install from source on Linux](#4-install-from-source-on-linux)
-5. [Using NeuralFrame](#5-using-neuralframe) - desktop app, command line, web interface, configuration
+5. [Using NeuralFrame](#5-using-neuralframe) - desktop app, command line, web interface, configuration,
+   [models](#55-models-which-one-and-what-to-expect)
 6. [Build the Windows app yourself](#6-build-the-windows-app-yourself)
 7. [Docker](#7-docker)
 8. [Supported hardware](#8-supported-hardware) - [Performance](#9-performance) -
@@ -161,24 +167,26 @@ With an NVIDIA card (about 2.5 GB download):
 
 ```powershell
 python -m pip install --upgrade pip
-pip install torch --index-url https://download.pytorch.org/whl/cu130
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
 ```
 
-Without an NVIDIA card use `--index-url https://download.pytorch.org/whl/cpu` instead.
+Without an NVIDIA card use `--index-url https://download.pytorch.org/whl/cpu` instead. (`torchvision` is
+needed by the large transformer models; installing it from the same address keeps it matched to PyTorch.)
 
 ### Step 5: install NeuralFrame
 
 ```powershell
-pip install -e ".[tensorrt,gui]"
+pip install -e ".[tensorrt,gui,models]"
 ```
 
-This compiles the C++ module (a minute or two) and installs TensorRT (about 2 GB) and the desktop app's
-Qt library. Pick the parts you need:
+This compiles the C++ module (a minute or two) and installs TensorRT (about 2 GB), the desktop app's Qt
+library and the loader for the large models. Pick the parts you need:
 
 | Extra | What it adds |
 |---|---|
 | `tensorrt` | TensorRT, the fastest way to run the models on NVIDIA cards (leave it out on other hardware) |
 | `gui` | the desktop app |
+| `models` | the large transformer models (HAT-L, DRCT-L, DAT2, ATD, SwinIR-L), RealPLKSR and BSRGAN, and adding your own model files (needs `torchvision` from step 4) |
 | `onnx-gpu` / `onnx` / `onnx-directml` | ONNX Runtime for NVIDIA / CPU / AMD and Intel GPUs on Windows |
 | `release` | PyInstaller, needed to [build the Windows app](#6-build-the-windows-app-yourself) |
 | `lpips` | an extra image-quality metric for `benchmarks/quality.py` |
@@ -205,7 +213,7 @@ neuralframe upscale "C:\Videos\clip.mp4" -o "C:\Videos\clip_4k.mkv"
 
 Everything you can do is in [section 5](#5-using-neuralframe). The first time each model runs on your card
 it is optimised for it ("building TensorRT engine", 1-4 minutes); later runs start straight away. The AI
-models themselves (3-150 MB each) are downloaded automatically the first time they are used.
+models themselves (3-250 MB each) are downloaded automatically the first time they are used.
 
 ### Every time you come back
 
@@ -222,8 +230,11 @@ cd $HOME\Documents\neural-frame
 cd $HOME\Documents\neural-frame
 .venv\Scripts\Activate.ps1
 git pull
-pip install -e ".[tensorrt,gui]"      # rebuilds the C++ module if it changed
+pip install -e ".[tensorrt,gui,models]"      # rebuilds the C++ module if it changed
 ```
+
+If your installation is older than the `models` extra, install `torchvision` once first, exactly as in
+step 4 (`pip install torch torchvision --index-url ...`).
 
 ### Uninstalling
 
@@ -266,13 +277,13 @@ cd neural-frame
 python3 -m venv .venv
 source .venv/bin/activate
 python -m pip install --upgrade pip
-pip install torch --index-url https://download.pytorch.org/whl/cu130   # no NVIDIA card: .../whl/cpu
-pip install -e ".[tensorrt,gui]"                                        # no NVIDIA card: ".[gui]"
+pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130   # no NVIDIA card: .../whl/cpu
+pip install -e ".[tensorrt,gui,models]"                                 # no NVIDIA card: ".[gui,models]"
 neuralframe doctor
 ```
 
 Then continue with [section 5](#5-using-neuralframe). Next time: `cd ~/neural-frame && source
-.venv/bin/activate`. Update with `git pull && pip install -e ".[tensorrt,gui]"`.
+.venv/bin/activate`. Update with `git pull && pip install -e ".[tensorrt,gui,models]"`.
 
 ---
 
@@ -296,13 +307,14 @@ file: `neuralframe-gui "C:\Videos\clip.mp4"`.
    * **Output size** - *4K* by default; *8K*, *1440p*, *1080p*, *720p*, *2x/3x/4x*, or *Custom...*
      where you type `2560x1440` (exact size), `x1.5` (scale factor) or `1200p` (height). The aspect ratio
      is kept unless you type an exact size.
-   * **Model** - *Automatic* uses the preset's model. Otherwise:
-     `realesr-animevideov3` (fast, ideal for cartoons and anime, good general choice),
-     `realesrgan-x4plus` (most detail on real video and photos, slow), `realesrgan-x2plus` (2x, for
-     degraded sources), `realbasicvsr-x4` (temporal model for noisy real-world video), `lanczos` /
-     `bicubic` (plain resizing, very fast). See [MODEL_CARDS.md](MODEL_CARDS.md).
-   * **Preset** - *quality*, *balanced* (default) or *fast*: model choice, tile overlap and how hard the
-     video encoder works.
+   * **Model** - *Automatic (analyses the video)* by default: after you open a file, the line under
+     *Model* shows which model suits it and why (cartoon or filmed, noise, compression, real detail). Pick
+     a model yourself from the list to override it; each entry shows its speed (*fast* to *very-slow*),
+     and hovering shows what it is made for. **Add model...** adds a model file you downloaded. See
+     [5.5](#55-models-which-one-and-what-to-expect).
+   * **Preset** - *fast*, *balanced* (default) or *quality*: which models automatic choice may use (fast
+     ones only / up to slow / also the very slow transformer models), tile overlap and how hard the video
+     encoder works.
 5. **Frame generation settings:**
    * **Frame rate** - 60 fps by default (59.94 for videos recorded at 29.97); 24, 30, 48, 120 or
      *Custom...* (e.g. `50`, `59.94`, `24000/1001`).
@@ -339,8 +351,14 @@ neuralframe upscale clip.mp4 -o clip_4k.mkv
 # Pick the size: --target 1080p | 1440p | 4k | 8k | x2 | 2560x1440, or --scale 1.5, --target-height 1200
 neuralframe upscale anime.mkv -o anime_1080p.mkv -m realesr-animevideov3 --target 1080p
 
-# The project's reference case: best detail, quality preset
-neuralframe upscale ref_480p.mp4 -o ref_1080p.mkv --model realesrgan-x4plus --target-height 1080 --preset quality
+# Best quality: automatic choice may use the very slow transformer models
+neuralframe upscale clip.mp4 -o clip_4k.mkv --preset quality
+
+# Which model would be used, and why (nothing is rendered)
+neuralframe recommend clip.mp4 --preset quality
+
+# A specific model: maximum detail from a clean source
+neuralframe upscale clip.mp4 -o clip_4k.mkv -m hat-l-x4
 
 # Upscale and generate frames to 60 fps (--fps takes any rate: 50, 59.94, 120, 24000/1001)
 neuralframe upscale clip.mp4 -o clip_4k60.mkv --fps 60
@@ -357,8 +375,9 @@ neuralframe upscale clip.mp4 -o clip_4k.mkv --resume
 # Information and tools
 neuralframe doctor                       # graphics card, drivers, what will be used
 neuralframe probe clip.mp4 --frames      # what NeuralFrame sees in a file
-neuralframe models list                  # available models and licences
-neuralframe models download realesrgan-x4plus   # download ahead of time (otherwise on first use)
+neuralframe models list                  # available models: speed, what they are for, licences
+neuralframe models download hat-l-x4     # download ahead of time (otherwise on first use)
+neuralframe models add 4x-Model.pth      # add your own model file (see 5.5)
 neuralframe compare clip.mp4 clip_4k.mkv --frame 120 --crop 1600,800,640,360 --zoom 2   # side-by-side PNG
 neuralframe benchmark -m realesr-animevideov3 -r 480p -t 1080p -n 300   # speed test
 neuralframe --help                       # all commands;  neuralframe upscale --help  for all options
@@ -368,9 +387,9 @@ Useful `upscale` options:
 
 | Option | Meaning |
 |---|---|
-| `-m`, `--model` | model id (see `neuralframe models list`) |
+| `-m`, `--model` | `auto` (default: analyse the input and pick) or a model id (see `neuralframe models list`) |
 | `-t`, `--target` / `--scale` / `--target-height` / `--size` | output size (one of them) |
-| `-p`, `--preset` | `quality`, `balanced` (default), `fast` |
+| `-p`, `--preset` | `quality`, `balanced` (default), `fast`: which models `auto` may use, encoder effort |
 | `--fps`, `--interpolate`, `--no-upscale` | frame generation (to a rate / at 60 fps / without upscaling) |
 | `--codec hevc\|h264\|av1`, `--crf N` / `--cq N`, `--10bit` | output video format and quality (lower number = better quality, bigger file) |
 | `--encoder` | force an encoder, e.g. `libx265` (software) or `hevc_nvenc` (NVIDIA) |
@@ -444,7 +463,88 @@ settings:
 | `encode.encoder`, `codec`, `quality` | auto, hevc, per preset | hardware encoder first, software fallback |
 | `chunking.chunk_frames` | 240 | how often progress is saved for resuming |
 | `framegen.fps`, `order`, `repair_drops` | 60, auto, auto | frame generation defaults |
-| `presets.<name>` | quality / balanced / fast | model, tile overlap, encoder speed and quality |
+| `presets.<name>` | quality / balanced / fast | model (`auto` or an id), tile overlap, encoder speed and quality |
+
+### 5.5 Models: which one, and what to expect
+
+Leave the model on **Automatic** (`-m auto`, the default) unless you have a reason not to. NeuralFrame
+then looks at eight frames spread over the video (the picture itself for images) and measures:
+
+* whether it is a **cartoon / anime** (flat colours, hard outlines) or **filmed** footage (also
+  computer-animated films such as Pixar-style CG, which are shaded like filmed footage);
+* **grain and noise**;
+* **compression damage**: 8x8 blocks, and too few bits per pixel for the video codec;
+* how much **real detail** there is: a 1080p file that was itself upscaled from 480p only has about 480p
+  of detail, so it needs a stronger model than its size suggests.
+
+It then picks the best model made for that kind of footage that also removes the problems it found,
+within the time the **preset** allows:
+
+| Preset | Models it may use |
+|---|---|
+| `fast` | only the fast models (good for long videos or a first look) |
+| `balanced` (default) | fast, medium and slow models |
+| `quality` | also the very slow transformer models, which create the most convincing detail |
+
+Without an NVIDIA graphics card (CUDA) only the fast models are considered. The desktop
+app shows the choice and the reasons under *Model*; `neuralframe recommend clip.mp4` prints them (add
+`--preset quality` or `--target 1080p` to see other choices), and every job's `.report.json` records them.
+
+The built-in models (`neuralframe models list` shows them; details and licences in
+[MODEL_CARDS.md](MODEL_CARDS.md)):
+
+| Model | Scale | Speed | Made for | Also removes |
+|---|---|---|---|---|
+| `hat-l-x4` | 4x | very slow | filmed footage in good condition: the most detail | - |
+| `drct-l-x4` | 4x | very slow | filmed footage in good condition (the largest model) | - |
+| `atd-x4` | 4x | very slow | filmed footage in good condition | - |
+| `dat2-real-x4` | 4x | very slow | real-world filmed footage | noise, compression, blur |
+| `swinir-l-x4` | 4x | very slow | heavily degraded filmed footage | noise, compression, blur |
+| `realplksr-x2` | 2x | medium | filmed footage, 2x jobs such as 1080p -> 4K | light noise, compression, blur |
+| `bsrgan-x4` | 4x | slow | badly degraded filmed footage | noise, compression, blur |
+| `realesrgan-x4plus` | 4x | slow | degraded filmed footage and photos (smooths clean sources) | noise, compression, blur |
+| `realesrgan-x2plus` | 2x | slow | degraded filmed footage at 2x (smooths clean sources) | noise, compression, blur |
+| `realbasicvsr-x4` | 4x | slow | noisy real-world video; uses neighbouring frames (only when chosen by name) | noise, compression, blur |
+| `realesr-general-x4v3` | 4x | fast | filmed and animated footage, the fast all-rounder | mild noise, compression |
+| `realesr-animevideov3` | 4x | fast | cartoons and anime (video) | noise, compression, blur |
+| `realesrgan-x4plus-anime` | 4x | medium | anime pictures and illustrations | noise, compression, blur |
+| `lanczos`, `bicubic` | any | fastest | plain resizing, no AI | - |
+
+The six newest models (the transformers and `realplksr-x2`, 30-250 MB each) are downloaded the first time
+they are used, also in the Windows app; all others are included.
+
+**What to expect.** No upscaler can bring back detail that was never recorded. The models redraw the
+picture at the higher resolution with detail that looks right - skin, hair, fabric, foliage, clean
+edges - learned from millions of examples. From a clean 720p or 1080p source the result can look close to
+a real high-resolution recording; the smaller, blurrier or more compressed the source, the more the result
+looks clean and sharp but "painted". Some practical advice:
+
+* Footage looks **smeared or waxy**: that is what restoration models do to clean sources. Use the
+  `quality` preset (or pick `hat-l-x4` yourself) for good sources; for damaged sources `dat2-real-x4`
+  keeps more texture than `realesrgan-x4plus`.
+* The very slow models run with PyTorch (not TensorRT) and need a strong NVIDIA card: try them on a short
+  clip first, e.g. cut 5 seconds with `ffmpeg -ss 60 -t 5 -i clip.mp4 -c copy short.mp4` and upscale
+  `short.mp4`.
+* Cartoons and anime: `realesr-animevideov3` keeps lines steady between frames; `realesrgan-x4plus-anime`
+  is sharper but made for still pictures.
+
+**Your own models.** Thousands of community models (for specific content: old film, anime, faces, game
+footage, ...) are on [OpenModelDB](https://openmodeldb.info). Any colour image-upscaling model that
+[spandrel](https://github.com/chaiNNer-org/spandrel) can load works (ESRGAN, SwinIR, HAT, DAT, DRCT, ATD,
+OmniSR, SPAN, PLKSR, Compact, ...), as a `.pth`, `.safetensors` or `.ckpt` file:
+
+```bash
+neuralframe models add 4x-MyModel.safetensors --content live-action --handles compression --licence CC0-1.0
+neuralframe upscale clip.mp4 -o clip_4k.mkv -m 4x-mymodel      # the id is printed by models add
+neuralframe models remove 4x-mymodel                           # removes the entry and the copied file
+```
+
+In the desktop app use **Add model...** next to *Model*. The file is checked (it must be an upscaler of 2x
+or more), copied into the model folder and recorded in `models.yaml` in your settings folder
+(`%APPDATA%\neuralframe` on Windows, `~/.config/neuralframe` on Linux). Added models are used when you
+choose them by name; to let automatic choice consider one, give it `--content` and a `--rank` (how good
+it is next to the built-in models, from 1 to 100: `hat-l-x4` is 95, `realesrgan-x4plus` 65; see
+`neuralframe models list --json`). Only add model files from sources you trust.
 
 ---
 
@@ -456,7 +556,7 @@ use yourself or to give to people who do not program.
 ### What you need
 
 * A Windows PC with the source installation from [section 3](#3-install-from-source-on-windows), including
-  the `tensorrt` and `gui` extras, plus `release`.
+  `torchvision` and the `tensorrt`, `gui` and `models` extras, plus `release`.
 * About 25 GB of free disk space (the build, the finished 5.3 GB folder and the 3.7 GB zip).
 * 15-30 minutes. An NVIDIA card is needed for the full self-test; on a PC without one, install the CPU
   version of PyTorch (section 3, step 4), leave out the `tensorrt` extra and build with
@@ -467,21 +567,23 @@ use yourself or to give to people who do not program.
 ```powershell
 cd $HOME\Documents\neural-frame
 .venv\Scripts\Activate.ps1
-pip install -e ".[tensorrt,gui,release]"
+pip install -e ".[tensorrt,gui,models,release]"
 python packaging\windows\build_release.py --zip
 ```
 
 The script:
 
-1. checks the environment (PyTorch with CUDA, TensorRT, PySide6, the C++ module, PyInstaller);
+1. checks the environment (PyTorch with CUDA, torchvision, spandrel, TensorRT, PySide6, the C++ module,
+   PyInstaller);
 2. packages the app with PyInstaller into one folder with `NeuralFrame.exe` (desktop app) and
    `neuralframe-cli.exe` (command line);
-3. downloads FFmpeg 9 (checksum-verified) into it and copies the AI models into it, so it works offline;
+3. downloads FFmpeg 9 (checksum-verified) into it and copies the AI models into it, so it works offline
+   (the six newest, largest models are not included: they download the first time someone uses them);
 4. removes files only needed for building (about 0.9 GB);
 5. **tests the result the way a user runs it**: from a fresh, empty data folder and with nothing from your
    development setup available, it runs a simple upscale, an upscale with TensorRT (building the engine
-   inside the package), frame generation, and starts the desktop app; the build stops with an error if any
-   of this fails;
+   inside the package), an upscale with a model loaded through spandrel, the automatic model choice, frame
+   generation, and starts the desktop app; the build stops with an error if any of this fails;
 6. creates the zip and `SHA256SUMS.txt`.
 
 ### What you get (in `build\release\`)
@@ -698,7 +800,9 @@ results, quality metrics and the optimisation log are in [docs/BENCHMARKS.md](do
 | realesrgan-x4plus (TensorRT) | 1.63 fps | 0.60 fps | 0.18 fps |
 | + frame generation to 59.94 fps (animevideov3) | 29.4 output fps | | |
 
-TensorRT is 2.3-2.8x faster than PyTorch end to end. On compressed 4x input the neural models add
+The newer models (the HAT-L, DRCT-L, DAT2, ATD and SwinIR-L transformers, RealPLKSR, BSRGAN and the
+others in [5.5](#55-models-which-one-and-what-to-expect)) are not measured here yet; their numbers will be
+added to [docs/BENCHMARKS.md](docs/BENCHMARKS.md). TensorRT is 2.3-2.8x faster than PyTorch end to end. On compressed 4x input the neural models add
 18-32 VMAF points over bicubic; chunk and tile seams are invisible (seam ratio 1.01-1.07, tiled vs whole
 frame > 55 dB). See the [gallery](docs/GALLERY.md) for crops.
 
@@ -727,6 +831,11 @@ frame > 55 dB). See the [gallery](docs/GALLERY.md) for crops.
 * **Resume says the job changed** - resuming needs the same input file and settings; use `--overwrite` to
   start over.
 * **The desktop app does not start (source install)** - install the extra: `pip install -e ".[gui]"`.
+* **`... needs the spandrel package` (`MODEL_UNAVAILABLE`)** - the large models need the `models` extra:
+  `pip install torchvision --index-url https://download.pytorch.org/whl/cu130` (use the same address as
+  for PyTorch), then `pip install -e ".[models]"`. Automatic choice skips these models until then.
+* **A very slow model is too slow** - use the `balanced` or `fast` preset, or pick a faster model; the
+  report and `neuralframe recommend` show what was chosen and why.
 
 ## 11. Assumptions & limitations
 
@@ -737,6 +846,12 @@ frame > 55 dB). See the [gallery](docs/GALLERY.md) for crops.
   hand-written CUDA kernels; decoded frames reach the GPU through pinned host memory, not NVDEC zero-copy.
 * GAN-based models invent plausible detail: they score below bicubic on PSNR while improving perceptual
   metrics (LPIPS, VMAF on degraded input). Choose the model for the content (see the model cards).
+* The transformer models and the other models loaded through spandrel run in PyTorch only (BF16 on
+  RTX 30-series and newer, FP32 on older cards, since they overflow in FP16); exporting them to
+  ONNX/TensorRT is not validated, so `models export` refuses them.
+* Automatic model choice uses measured image statistics and per-model ranks; the ranks are a first
+  calibration and will be refined with more measurements. Its cartoon detector was calibrated on
+  2D-animated and filmed footage: computer-animated films count as filmed footage.
 * RIFE runs in PyTorch FP16 (no TensorRT engine yet); it is the bottleneck when frame generation runs at
   4K output.
 * Drop detection works on small thumbnails: a frozen frame is found when its surroundings move; drops in an
@@ -752,13 +867,14 @@ frame > 55 dB). See the [gallery](docs/GALLERY.md) for crops.
 ## 12. Development
 
 ```bash
-pip install -e ".[dev,gui,onnx-gpu,tensorrt]"
+pip install -e ".[dev,gui,models,onnx-gpu,tensorrt]"
 ruff check neuralframe tests benchmarks packaging && mypy neuralframe
 pytest                                   # GPU / network tests skip themselves when unavailable
 cmake -S . -B build/native-tests -DNEURALFRAME_BUILD_TESTS=ON -DNEURALFRAME_BUILD_PYTHON=OFF
 cmake --build build/native-tests --config Release && ctest --test-dir build/native-tests -C Release
 python benchmarks/run.py                 # throughput matrix -> benchmarks/results/
-python benchmarks/quality.py             # quality evaluation (downloads the CC BY Sintel trailer once)
+python benchmarks/quality.py             # quality evaluation on CC BY Sintel and Tears of Steel clips
+python benchmarks/quality.py --sources tos --models hat-l-x4,dat2-real-x4   # a subset
 ```
 
 Layout: `neuralframe/{cli,api,db,core,io,chunking,inference,models,ops,framegen,quality,gui}`, C++ in
@@ -769,6 +885,7 @@ tests on Linux and Windows.
 
 ## Credits
 
-Models: Real-ESRGAN (BSD-3-Clause), RealBasicVSR (Apache-2.0), RIFE / Practical-RIFE (MIT); see
-[MODEL_CARDS.md](MODEL_CARDS.md). Evaluation footage: *Sintel* trailer, (c) Blender Foundation |
-durian.blender.org, CC BY 3.0. FFmpeg is a trademark of Fabrice Bellard.
+Models: Real-ESRGAN (BSD-3-Clause), BSRGAN, SwinIR, RealBasicVSR (Apache-2.0), HAT-L, DRCT-L, DAT2,
+ATD and RealPLKSR weights trained by Philip Hofmann (CC BY 4.0 / Apache-2.0), RIFE / Practical-RIFE (MIT);
+networks loaded with spandrel (MIT); see [MODEL_CARDS.md](MODEL_CARDS.md). Evaluation footage: *Sintel*
+trailer and *Tears of Steel*, (c) Blender Foundation | durian.blender.org / mango.blender.org, CC BY 3.0. FFmpeg is a trademark of Fabrice Bellard.

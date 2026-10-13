@@ -43,6 +43,18 @@ desktop GUI application.
      **interpolate → upscale**, which measured 3.3× / 1.4× faster (see M6 findings). Configurable.
    - Frame/drop statistics go into the job report.
 
+### 1.2 Scope additions (requested 2026-10-13)
+
+1. **More and stronger models**: the large transformer models (HAT-L, DRCT-L, DAT2, ATD, SwinIR-L) and
+   strong CNNs (BSRGAN, RealPLKSR, Real-ESRGAN general v3, x4plus anime), plus any model file a user adds
+   (OpenModelDB), built through spandrel.
+2. **Quality complaint**: output looked "smoothed and smudged", not like a real high-resolution recording.
+   Cause: every preset used Real-ESRGAN x4plus/x2plus, which are trained on heavy synthetic degradations
+   and smooth clean footage. Goal: detail that looks recorded (plausible synthesis; nothing can recover
+   detail that was never captured).
+3. **Automatic model choice**: analyse the video and pick the model that suits it; the presets default to
+   it.
+
 ## 2. Development machine (capability check, 2026-10-12)
 
 | Item | Detected |
@@ -252,6 +264,29 @@ desktop GUI application.
   a native Linux host with the NVIDIA Container Toolkit could not be measured here. Building the 18.8 GB
   image next to a GPU job exhausted the 15 GB of RAM and crashed the Docker engine: build images alone.
 
+### Findings from Milestone 10 (code; GPU measurements pending)
+
+- spandrel 0.4 builds all the new architectures from their checkpoints and reproduces the project's own
+  SRVGG and RRDBNet modules exactly (max difference 0.0 on the same weights), so only the new networks
+  depend on it. It reports `supports_half = False` for HAT, DRCT, DAT, ATD and SwinIR: those run in BF16
+  on GPUs with native bfloat16 and FP32 elsewhere.
+- Cartoon detection by flat-area share alone called the Sintel trailer (CG animation, film-like shading)
+  71 % animated. The ratio of hard (> 24 levels) to soft (2-12 levels) steps on a 320 px thumbnail
+  separates them: 2D cartoon frames 0.41-2.2 (one flat-shaded scene 0.23 with 52 % flat blocks), live
+  action 0.15-0.32, photo-real CG 0.11-0.16. CG films are therefore treated as filmed footage, which is
+  also what the live-action models suit.
+- 8x8 blocking measured at grid phase 0 only missed shifted or cropped videos; the strongest of the eight
+  phases against their median is shift-invariant. Completely flat blocks (the worst case) left every
+  other phase at zero and were skipped as "no data" until the ratio was floored.
+- The real resolution matters more than the file's: 1080p upscaled from 480p needs a 4.5x model to reach
+  4K, so the choice works on file factor x height / effective height. 2x models need two passes beyond
+  about 2.5x and lose to a 4x model there.
+- Still-image models (x4plus anime) won anime videos on rank alone; they are flagged `stills` and
+  penalised for video, where AnimeVideo v3 is steadier.
+- Users' model files come from the internet: only `.pth` (spandrel's restricted unpickler),
+  `.safetensors` and `.ckpt` are accepted, never `.pt` (spandrel opens those as TorchScript, which can
+  carry code). A broken user `models.yaml` is skipped entry by entry instead of breaking every command.
+
 ## 5. Milestones
 
 ### M1 — Skeleton + I/O
@@ -347,7 +382,7 @@ desktop GUI application.
       analysis pass: frozen frames, gaps, scene cuts, intentional holds)
 - [x] Mode: Upscale / Frame generation / Both (video); Upscale only (image)
 - [x] Upscale options: 4K default, 8K/1440p/1080p/720p, 2x/3x/4x, custom (W×H, xF, NNNp), model (automatic
-      from preset or any registered model), quality preset; frame generation: 60 fps default + presets +
+      from preset or any registered model; M10: automatic = content analysis), quality preset; frame generation: 60 fps default + presets +
       custom (59.94, 24000/1001 ...), drop repair (smart / every repeat / off)
 - [x] Runs the same `JobRunner` in a worker thread; live progress bar, frames, fps, ETA, VRAM/GPU load,
       per-stage throughput, cancel (keeps finished chunks) and resume
@@ -371,6 +406,27 @@ desktop GUI application.
       with `NeuralFrame.exe` + `neuralframe-cli.exe`, pinned FFmpeg, bundled models, smoke-tested as a user
       runs it, portable zip (+ Inno Setup installer when available)
 - [x] Reference case run + final acceptance checklist
+
+### M10 — More models, automatic model choice
+- [x] spandrel loader (`architecture: spandrel`), registry fields `backends`, `fp16`, `memory_per_pixel`,
+      `bundled`, `speed`, `content`, `handles`, `rank`, `stills`; BF16/FP32 for FP16-unsafe models;
+      PyTorch-only models never sent to TensorRT/ONNX
+- [x] 9 new checksum-pinned models: HAT-L, DRCT-L, DAT2 (real), ATD, SwinIR-L (real GAN), BSRGAN,
+      RealPLKSR 2x, Real-ESRGAN general v3, x4plus anime 6B
+- [x] Content analysis + recommendation (`models/advisor.py`), `-m auto` as every preset's model, reasons in
+      the job report, `neuralframe recommend`, the choice and reasons shown live in the desktop app,
+      "Automatic" in the web UI
+- [x] Your own models: `neuralframe models add/remove`, "Add model..." in the desktop app, per-user
+      registry (`models.yaml` in the settings folder), optional `--rank` for automatic choice
+- [x] Release (spandrel/torchvision collected, large models download on first use, smoke test covers a
+      spandrel model and `recommend`), Docker and CI install the `models` extra
+- [x] Unit tests (detectors on synthetic images, choosing rules, user models, job integration) and
+      integration tests (CLI, desktop app, CPU job with an added transformer, GPU job per family)
+- [x] Quality evaluation extended: all models, automatic choice per preset, filmed reference (Tears of
+      Steel)
+- [ ] Measure speed, VRAM per pixel and quality of the new models on the GPU; calibrate `rank`,
+      `memory_per_pixel` and the preset speed sets from the results
+- [ ] Full gate (ruff, mypy, pytest incl. GPU, CTest); release build and Docker image build re-tested
 
 ## 6. Working agreement
 

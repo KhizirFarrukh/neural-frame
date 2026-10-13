@@ -181,3 +181,40 @@ def test_two_workers_queue_pull_matches_one_worker(
     frames = {s["name"]: s["frames"] for s in report["throughput"]["stages"]}
     assert frames["inference@0"] > 0 and frames["inference@1"] > 0  # both workers pulled work
     assert ffhelpers.frame_md5s(double) == ffhelpers.frame_md5s(single)
+
+
+def test_added_transformer_model_on_cpu(
+    tools: FFmpegTools, caps: Capabilities, settings: Settings, clip: ClipFactory, tmp_path: Path,
+) -> None:
+    """A model file added by the user (spandrel-built SwinIR): PyTorch only, never FP16."""
+    pytest.importorskip("spandrel")
+    from neuralframe.models.custom import add_user_model
+    from neuralframe.models.registry import ModelRegistry
+    from tests.models import tiny_swinir_file
+
+    settings.inference.device = "cpu"
+    spec = add_user_model(tiny_swinir_file(tmp_path / "dl"), settings.paths.models(), model_id="e2e-swinir")
+    src = clip("nn-swinir", width=96, height=64, duration=0.5, audio=False)
+    out = tmp_path / "swinir.mkv"
+    report = _run(settings, caps, ModelRegistry.load(), input=src, output=out, model=spec.id,
+                  target=TargetSpec.factor(2), tile_size=48, tile_overlap=8)
+    assert report["plan"]["inference"]["backend"] == "torch"
+    assert report["plan"]["inference"]["precision"] != "fp16"
+    v = probe(out, tools).require_video()
+    assert (v.width, v.height) == (192, 128)
+
+
+@pytest.mark.gpu
+@pytest.mark.parametrize("model_id", ["bsrgan-x4", "hat-l-x4", "dat2-real-x4"])
+def test_downloaded_spandrel_models_on_cuda(
+    tools: FFmpegTools, caps: Capabilities, settings: Settings, clip: ClipFactory, tmp_path: Path, model_id: str,
+) -> None:
+    """Real weights from the model cache (downloaded on first use otherwise)."""
+    pytest.importorskip("spandrel")
+    settings.paths.cache_dir = default_cache_dir()
+    src = clip(f"nn-{model_id}", width=128, height=72, duration=0.5, audio=False)
+    out = tmp_path / f"{model_id}.mkv"
+    report = _run(settings, caps, None, input=src, output=out, model=model_id, target=TargetSpec.factor(4))
+    assert report["plan"]["inference"]["backend"] == "torch"
+    v = probe(out, tools).require_video()
+    assert (v.width, v.height) == (512, 288)

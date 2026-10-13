@@ -76,6 +76,11 @@ Summary:
 
 ## Quality
 
+The tables below were measured before the model update (M10). `benchmarks/quality.py` now also covers the
+new models (BSRGAN, RealPLKSR, the HAT-L / DRCT-L / DAT2 / ATD / SwinIR-L transformers, realesr-general),
+the automatic model choice for each preset, and a filmed reference (*Tears of Steel*, CC BY 3.0, 1920x800);
+those results will be added here once measured.
+
 Sintel trailer ((c) Blender Foundation | durian.blender.org, CC BY 3.0), 6 s from 32.5 s, 1920x816 with
 the letterbox removed, downscaled with bicubic filtering. PSNR uses MSE pooled over all frames; SSIM and
 PSNR are on luma. Flicker = temporal change in regions that are static in the original (lower is

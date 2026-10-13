@@ -17,7 +17,7 @@ from neuralframe import __version__
 from neuralframe.config import Settings, load_settings
 from neuralframe.core.job import JobPlan, JobRunner, JobSpec, ProgressEvent
 from neuralframe.core.planning import TargetSpec
-from neuralframe.errors import JobCancelled, NeuralFrameError
+from neuralframe.errors import ErrorCode, JobCancelled, NeuralFrameError
 from neuralframe.log import configure_logging
 
 app = typer.Typer(
@@ -252,7 +252,9 @@ def upscale(
     output: Path = typer.Option(
         ..., "--output", "-o", help="Output file: video (.mkv .mp4 .mov .webm) or image (.png .jpg .webp .tif .bmp)."
     ),
-    model: str | None = typer.Option(None, "--model", "-m", help="Model id (see `neuralframe models list`)."),
+    model: str | None = typer.Option(
+        None, "--model", "-m", help="Model id (see `neuralframe models list`) or auto (default: analyse the input)."
+    ),
     target: str | None = typer.Option(
         None, "--target", "-t", help="4k (default), 1440p, 1080p, 8k, native, 1920x1080, x2"
     ),
@@ -431,12 +433,63 @@ def models_list(as_json: bool = typer.Option(False, "--json")) -> None:
     if as_json:
         out.print_json(json.dumps([m.model_dump(mode="json") for m in registry.all()]))
         return
-    table = Table(title="Models", title_justify="left")
-    for col in ("id", "kind", "scale", "input", "licence", "recommended for"):
+    table = Table(title="Models (-m auto picks one for each video)", title_justify="left")
+    for col in ("id", "scale", "speed", "for", "removes", "licence"):
         table.add_column(col, no_wrap=col == "id")
     for m in registry.all():
-        table.add_row(m.id, m.kind, f"x{m.scale}", m.input, m.licence, ", ".join(m.recommended_content))
+        name = m.id + (" [cyan](added)[/]" if m.origin == "user" else "")
+        kind = m.kind if m.kind != "sr" else ", ".join(m.content) or "-"
+        table.add_row(name, f"x{m.scale}", m.speed or "-", kind, ", ".join(m.handles) or "-", m.licence)
     console.print(table)
+    console.print("[dim]Details: MODEL_CARDS.md, or `neuralframe models list --json`. Add your own model file with "
+                  "`neuralframe models add FILE`.[/]")
+
+
+@models_app.command("add")
+def models_add(
+    ctx: typer.Context,
+    file: Path = typer.Argument(..., exists=True, dir_okay=False, help="Model file (.pth, .safetensors or .ckpt)."),
+    model_id: str | None = typer.Option(None, "--id", help="Name to use with -m (default: from the file name)."),
+    description: str | None = typer.Option(None, "--description"),
+    licence: str | None = typer.Option(None, "--licence", help="Licence of the model, e.g. CC-BY-4.0."),
+    content: list[str] = typer.Option([], "--content", help="What it is made for: live-action and/or animation "
+                                      "(repeatable)."),
+    handles: list[str] = typer.Option([], "--handles", help="What it removes: noise, compression, blur "
+                                      "(repeatable)."),
+    rank: int = typer.Option(0, "--rank", min=0, max=100, help="Let automatic choice use it (with --content): "
+                             "how good it is next to the built-in models, e.g. hat-l-x4 95, realesrgan-x4plus 65 "
+                             "(see `models list --json`). 0 = only when chosen with -m."),
+) -> None:
+    """Add your own upscaling model file (any architecture spandrel supports, e.g. from OpenModelDB)."""
+    from neuralframe.models.custom import add_user_model
+
+    settings = _state(ctx).settings
+    try:
+        spec = add_user_model(file, settings.paths.models(), model_id=model_id, description=description,
+                              licence=licence, content=content, handles=handles, rank=rank)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]added[/] {spec.id}: {spec.description} (speed: {spec.speed})")
+    console.print(f"use it with: neuralframe upscale INPUT -o OUTPUT -m {spec.id}")
+    out.print(spec.id)
+
+
+@models_app.command("remove")
+def models_remove(
+    ctx: typer.Context,
+    model_id: str = typer.Argument(..., help="Id of a model added with `models add`."),
+    keep_file: bool = typer.Option(False, "--keep-file", help="Keep the copied model file."),
+) -> None:
+    """Remove a model you added."""
+    from neuralframe.models.custom import remove_user_model
+
+    try:
+        remove_user_model(model_id, _state(ctx).settings.paths.models(), delete_file=not keep_file)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    console.print(f"removed {model_id}")
 
 
 @models_app.command("download")
@@ -515,6 +568,9 @@ def models_export(
     settings = _state(ctx).settings
     try:
         spec = ModelRegistry.load().get(model_id)
+        if not spec.allows("onnxruntime"):
+            raise NeuralFrameError(ErrorCode.BACKEND_UNAVAILABLE,
+                                   f"{model_id} runs on PyTorch only; ONNX/TensorRT export is not validated for it")
         weights = ensure_weights(spec, settings.paths.models())
         path = export_onnx(spec, weights, onnx_path(spec, settings.paths.models()))
     except NeuralFrameError as exc:
@@ -549,6 +605,66 @@ def models_export(
         mx, mean, psnr = compare_outputs(ref_out, out)
         table.add_row(name, precision, f"{mx:.5f}", f"{mean:.6f}", f"{psnr:.1f}")
     console.print(table)
+
+
+# -------------------------------------------------------------------------------------------------------
+# recommend
+# -------------------------------------------------------------------------------------------------------
+
+
+@app.command()
+def recommend(
+    ctx: typer.Context,
+    input_path: Path = typer.Argument(..., exists=True, dir_okay=False, help="Video or image to analyse."),
+    target: str | None = typer.Option(None, "--target", "-t", help="Output size (default 4k)."),
+    preset: str = typer.Option("balanced", "--preset", "-p", help="quality | balanced | fast"),
+    as_json: bool = typer.Option(False, "--json"),
+) -> None:
+    """Analyse a video or image and show which model `-m auto` would use, and why."""
+    from neuralframe.core.planning import plan_geometry
+    from neuralframe.io.ffmpeg import locate_ffmpeg
+    from neuralframe.io.probe import probe
+    from neuralframe.models.advisor import analyse_content
+    from neuralframe.models.advisor import recommend as choose
+    from neuralframe.models.registry import ModelRegistry
+
+    settings = _state(ctx).settings
+    try:
+        tools = locate_ffmpeg(settings.ffmpeg.ffmpeg, settings.ffmpeg.ffprobe)
+        media = probe(input_path, tools)
+        geometry, _ = plan_geometry(media.require_video(), _target(target, None, None, None), 4)
+        with console.status("analysing..."):
+            profile = analyse_content(tools, input_path, media)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    gpu = settings.inference.device != "cpu"
+    if gpu:
+        try:
+            from neuralframe.inference.factory import torch_cuda_available
+
+            gpu = torch_cuda_available()
+        except ImportError:
+            gpu = False
+    choice = choose(profile, ModelRegistry.load(), factor=geometry.out_height / max(geometry.decoded_height, 1),
+                    preset=preset, is_image=media.is_image, gpu=gpu)
+    if as_json:
+        out.print_json(json.dumps(choice.summary()))
+        return
+    p = profile
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    table.add_row("content", f"{p.content} ({round(p.animation_score * p.frames)} of {p.frames} frames look animated)")
+    table.add_row("noise", f"{p.noise:.1f} levels")
+    table.add_row("compression", f"blocking {p.blockiness:.2f}"
+                  + (f", {p.bits_per_pixel:.3f} bits/pixel" if p.bits_per_pixel is not None else ""))
+    table.add_row("real detail", f"about {p.effective_height}p in a {p.height}p frame")
+    table.add_row("upscale", f"{choice.factor:.2f}x to {geometry.out_width}x{geometry.out_height}")
+    console.print(table)
+    out.print(f"[bold]{choice.model}[/]  ({preset} preset)")
+    for reason in choice.reasons:
+        console.print(f"  - {reason}")
+    if choice.alternatives:
+        console.print(f"[dim]alternatives: {', '.join(choice.alternatives)}[/]")
 
 
 # -------------------------------------------------------------------------------------------------------

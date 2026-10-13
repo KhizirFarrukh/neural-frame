@@ -177,6 +177,8 @@ class JobPlan:
     framegen_weights: Path | None = None
     framegen: dict[str, Any] | None = None
     out_fps: Fraction | None = None
+    model_choice: dict[str, Any] | None = None
+    """Content analysis and reasons when the model was chosen automatically."""
 
     def __post_init__(self) -> None:
         if self.source_chunks is None:
@@ -220,6 +222,7 @@ class JobPlan:
             "mux": self.mux.summary(),
             "chunks": self.chunks.summary(),
             "framegen": self.framegen,
+            "model_choice": self.model_choice,
             "mode": self.mode,
             "ops": self.ops if self.mode == "host" else "torch",
             "inference": self.inference.summary() if self.inference else None,
@@ -305,6 +308,8 @@ class JobRunner:
         self._adaptations: list[dict[str, Any]] = []
         self._calibration: dict[str, Any] | None = None
         self._resume_info: dict[str, Any] = {"mode": "fresh"}
+        self.model_choice: dict[str, Any] | None = None
+        """Set when ``model`` was ``auto``: the content analysis and why the model was picked."""
         self._vram_reserve = 0
         """VRAM kept free for frame interpolation sharing the super-resolution device."""
 
@@ -374,20 +379,53 @@ class JobRunner:
                 ErrorCode.INVALID_INPUT, f"output already exists: {spec.output}", hint="pass --overwrite"
             )
 
-    def resolve_model(self, spec: JobSpec) -> ModelSpec:
+    def resolve_model(self, spec: JobSpec, tools: FFmpegTools | None = None,
+                      media: MediaInfo | None = None) -> ModelSpec:
+        """The job's model: explicit, else the preset's; ``auto`` analyses the input and picks one."""
         if not spec.upscale:
             return self.registry.get("lanczos")
         preset = self.settings.preset(spec.preset)
-        model_id = spec.model or preset.model or "lanczos"
+        model_id = spec.model or preset.model or "auto"
+        if model_id == "auto":
+            model_id = self.recommend_model(spec, tools, media)
         return self.registry.get(model_id)
+
+    def recommend_model(self, spec: JobSpec, tools: FFmpegTools | None, media: MediaInfo | None) -> str:
+        """Automatic model choice (models/advisor.py); records the reasons in :attr:`model_choice`."""
+        fallback = "realesr-general-x4v3"
+        if tools is None or media is None:
+            return fallback
+        from neuralframe.models.advisor import analyse_content, recommend
+
+        self._emit("planning", "analysing the video to choose a model")
+        try:
+            video = media.require_video()
+            geometry, _ = plan_geometry(video, spec.target, 4)
+            factor = geometry.out_height / max(geometry.decoded_height, 1)
+            profile = analyse_content(tools, spec.input, media)
+            gpu = self.settings.inference.device != "cpu" and importlib.util.find_spec("torch") is not None
+            if gpu:
+                from neuralframe.inference.factory import torch_cuda_available
+
+                gpu = torch_cuda_available()
+            choice = recommend(profile, self.registry, factor=factor, preset=spec.preset,
+                               is_image=media.is_image, gpu=gpu)
+        except Exception as exc:  # analysis must never stop a job: use a safe general model
+            log.warning("automatic model choice failed; using the general model", error=str(exc))
+            self.model_choice = {"model": fallback, "reasons": [f"content analysis failed: {exc}"]}
+            return fallback
+        self.model_choice = choice.summary()
+        return choice.model
 
     def plan(self, spec: JobSpec, tools: FFmpegTools, media: MediaInfo, timeline: FrameTimeline) -> JobPlan:
         settings = self.settings
         preset = settings.preset(spec.preset)
         caps = self.capabilities(tools)
         video = media.require_video()
-        model = self.resolve_model(spec)
+        model = self.resolve_model(spec, tools, media)
         notes: list[str] = []
+        if self.model_choice is not None:
+            notes.append(f"automatic model choice: {model.id} - " + "; ".join(self.model_choice["reasons"]))
 
         target = spec.target if spec.upscale else TargetSpec.native()
         geometry, geo_notes = plan_geometry(video, target, model.scale)
@@ -564,7 +602,7 @@ class JobRunner:
             work_dir=settings.paths.work() / job_key, notes=notes, mode=mode, inference=inference,
             weights=weights, temporal_overlap=temporal_overlap, output_frames=output_frames,
             source_chunks=source_chunks, retime=retime, framegen_order=fg_order, framegen_model=fg_model,
-            framegen_weights=fg_weights, framegen=framegen, out_fps=out_fps,
+            framegen_weights=fg_weights, framegen=framegen, out_fps=out_fps, model_choice=self.model_choice,
         )
 
     def needs_analysis(self, model: ModelSpec) -> bool:
@@ -683,6 +721,17 @@ class JobRunner:
             raise NeuralFrameError(ErrorCode.BACKEND_UNAVAILABLE, "inference.device=cuda but CUDA is not available")
         device = resolve_device(spec.gpus or settings.inference.gpus, force_cpu=settings.inference.device == "cpu")
         backend = resolve_backend_name(spec.backend or settings.inference.backend, device)
+        if not model.allows(backend):
+            from neuralframe.inference.factory import available_backends
+
+            allowed = [b for b in (model.backends or []) if b in available_backends()] or ["torch"]
+            notes.append(f"{model.id} runs on {allowed[0]} (requested {backend} is not validated for this model)")
+            backend = allowed[0]
+        from neuralframe.inference.factory import model_precision
+
+        precision = model_precision(model, settings.inference.precision, device)
+        if precision != settings.inference.precision and device.type == "cuda":
+            notes.append(f"{model.id} runs in {precision} (it overflows in FP16)")
         budget = memory_budget(
             device,
             safety_margin=settings.vram.safety_margin,
@@ -698,7 +747,7 @@ class JobRunner:
             capacity = max(capacity - self._vram_reserve, 256 * 2**20)
             inference = plan_temporal(
                 model, (geometry.decoded_height, geometry.decoded_width), device=device,
-                precision=settings.inference.precision, capacity_bytes=capacity,
+                precision=precision, capacity_bytes=capacity,
                 requested_backend=spec.backend or settings.inference.backend,
             )
             notes += list(inference.notes)
@@ -715,7 +764,7 @@ class JobRunner:
         h = geometry.decoded_height * model.scale ** max(geometry.model_passes - 1, 0)
         w = geometry.decoded_width * model.scale ** max(geometry.model_passes - 1, 0)
         inference = plan_inference(
-            model, (h, w), device=device, backend=backend, precision=settings.inference.precision,
+            model, (h, w), device=device, backend=backend, precision=precision,
             budget_bytes=budget, tile=spec.tile_size or settings.inference.tile_size, overlap=overlap,
             batch=spec.batch_size or settings.inference.batch_size,
         )

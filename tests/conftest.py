@@ -37,6 +37,14 @@ def _quiet_logs() -> None:
     configure_logging("WARNING")
 
 
+@pytest.fixture(autouse=True)
+def user_config(tmp_path_factory: pytest.TempPathFactory, monkeypatch: pytest.MonkeyPatch) -> Path:
+    """Per-test settings folder: tests never see (or change) the developer's config.yaml and added models."""
+    folder = tmp_path_factory.mktemp("user-config")
+    monkeypatch.setattr("neuralframe.config.user_config_dir", lambda: folder)
+    return folder
+
+
 @pytest.fixture(scope="session")
 def tools() -> FFmpegTools:
     return locate_ffmpeg()

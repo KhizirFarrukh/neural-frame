@@ -72,6 +72,8 @@ class MainWindow(QMainWindow):
     scan_finished = Signal()
     job_finished = Signal(str)
     preview_loaded = Signal()
+    recommendation_ready = Signal()
+    model_added = Signal(str)
 
     def __init__(self, settings: Settings, *, registry: ModelRegistry | None = None,
                  capabilities: Any = None) -> None:
@@ -88,6 +90,9 @@ class MainWindow(QMainWindow):
         self._last_spec: JobSpec | None = None
         self.result: JobResult | None = None
         self._output_edited = False
+        self.profile: Any = None
+        """Content analysis of the loaded file (automatic model choice)."""
+        self.recommended: str | None = None
 
         self.setWindowTitle("NeuralFrame")
         self.setAcceptDrops(True)
@@ -173,21 +178,29 @@ class MainWindow(QMainWindow):
         self.custom_target.setVisible(False)
         self.custom_target.textChanged.connect(self._refresh_output)
         self.model_combo = QComboBox()
-        self.model_combo.addItem("Automatic (from preset)", None)
-        for m in self.registry.all():
-            if m.kind == "interpolation":
-                continue
-            label = f"{m.id}  (x{m.scale}{', temporal' if m.is_temporal else ''})"
-            self.model_combo.addItem(label, m.id)
-            self.model_combo.setItemData(self.model_combo.count() - 1,
-                                         f"{m.description}\nlicence: {m.licence}", Qt.ItemDataRole.ToolTipRole)
+        self._fill_models()
+        self.model_combo.currentIndexChanged.connect(self._update_recommendation)
+        self.add_model_button = QPushButton("Add model...")
+        self.add_model_button.setToolTip("Use your own model file (.pth / .safetensors), e.g. from OpenModelDB")
+        self.add_model_button.clicked.connect(self._choose_model_file)
+        model_row = QHBoxLayout()
+        model_row.addWidget(self.model_combo, 1)
+        model_row.addWidget(self.add_model_button)
+        self.auto_label = QLabel("")
+        self.auto_label.setWordWrap(True)
+        self.auto_label.setTextFormat(Qt.TextFormat.RichText)
         self.preset_combo = QComboBox()
         for name in sorted({*builtin_presets(), *self.settings.presets}):
             self.preset_combo.addItem(name, name)
         self.preset_combo.setCurrentText("balanced")
+        self.preset_combo.setToolTip("fast: fast models only - balanced: up to slow models - quality: also the "
+                                     "very slow transformer models with the most detail")
+        self.preset_combo.currentIndexChanged.connect(self._update_recommendation)
+        self.custom_target.textChanged.connect(self._update_recommendation)
         uf.addRow("Output size", self.target_combo)
         uf.addRow("", self.custom_target)
-        uf.addRow("Model", self.model_combo)
+        uf.addRow("Model", model_row)
+        uf.addRow("", self.auto_label)
         uf.addRow("Preset", self.preset_combo)
 
         self.framegen_box = QGroupBox("Frame generation")
@@ -350,6 +363,111 @@ class MainWindow(QMainWindow):
     def _target_changed(self) -> None:
         self.custom_target.setVisible(self.target_combo.currentData() == "custom")
         self._refresh_output()
+        self._update_recommendation()
+
+    # ---- models ----------------------------------------------------------------------------------------
+
+    def _fill_models(self, select: str | None = None) -> None:
+        current = select or self.model_combo.currentData() or "auto"
+        self.model_combo.blockSignals(True)
+        self.model_combo.clear()
+        self.model_combo.addItem("Automatic (analyses the video)", "auto")
+        self.model_combo.setItemData(0, "Looks at the video (cartoon or filmed, noise, compression, real "
+                                        "resolution) and picks the best model within the preset's speed",
+                                     Qt.ItemDataRole.ToolTipRole)
+        for m in self.registry.all():
+            if m.kind == "interpolation":
+                continue
+            extras = [x for x in (m.speed, "temporal" if m.is_temporal else None,
+                                  "added" if m.origin == "user" else None) if x]
+            self.model_combo.addItem(f"{m.id}  (x{m.scale}{', ' + ', '.join(extras) if extras else ''})", m.id)
+            self.model_combo.setItemData(self.model_combo.count() - 1, f"{m.description}\nlicence: {m.licence}",
+                                         Qt.ItemDataRole.ToolTipRole)
+        index = self.model_combo.findData(current)
+        self.model_combo.setCurrentIndex(index if index >= 0 else 0)
+        self.model_combo.blockSignals(False)
+
+    def _analyse_content(self) -> None:
+        """Content analysis for the automatic model choice, in the background after a file is loaded."""
+        if self.input_path is None or self.media is None:
+            return
+        path, media = self.input_path, self.media
+        self.auto_label.setText("<i>Automatic: analysing the video...</i>")
+
+        def work() -> Any:
+            from neuralframe.models.advisor import analyse_content
+
+            return analyse_content(self.tools(), path, media)
+
+        def done(profile: Any) -> None:
+            if path != self.input_path:
+                return  # another file was loaded meanwhile
+            self.profile = profile
+            self._update_recommendation()
+
+        def failed(exc: BaseException) -> None:
+            self.profile = None
+            self.auto_label.setText(f"<i>Automatic: analysis failed ({exc}); the general model will be used</i>")
+            self.recommendation_ready.emit()
+
+        self._dispatch.run(work, done, failed, name="nf-analyse")
+
+    def _update_recommendation(self) -> None:
+        if self.model_combo.currentData() != "auto":
+            self.auto_label.setText("")
+            return
+        if self.profile is None or self.media is None:
+            return
+        from neuralframe.core.planning import plan_geometry
+        from neuralframe.models.advisor import recommend
+
+        try:
+            geometry, _ = plan_geometry(self.media.require_video(), self.target_spec(), 4)
+        except (ValueError, NeuralFrameError):
+            return
+        gpu = bool(getattr(self._caps, "torch_cuda_available", False)) and self.settings.inference.device != "cpu"
+        choice = recommend(self.profile, self.registry, factor=geometry.out_height / max(geometry.decoded_height, 1),
+                           preset=self.preset_combo.currentData() or "balanced", is_image=self.media.is_image,
+                           gpu=gpu)
+        self.recommended = choice.model
+        speed = self.registry.get(choice.model).speed or ""
+        reasons = "; ".join(choice.reasons[:4])
+        self.auto_label.setText(f"Automatic choice: <b>{choice.model}</b> ({speed}) - {reasons}")
+        self.recommendation_ready.emit()
+
+    def _choose_model_file(self) -> None:
+        path, _ = QFileDialog.getOpenFileName(self, "Choose a model file", "",
+                                              "Model files (*.pth *.safetensors *.ckpt);;All files (*)")
+        if path:
+            self.add_model(Path(path))
+
+    def add_model(self, file: Path) -> None:
+        """Register a model file (checked and copied in the background) and select it."""
+        self.error_label.clear()
+        self.status_label.setText(f"Checking {file.name}...")
+        self.add_model_button.setEnabled(False)
+
+        def work() -> Any:
+            from neuralframe.models.custom import add_user_model
+
+            return add_user_model(file, self.settings.paths.models())
+
+        def done(spec: Any) -> None:
+            from neuralframe.models.registry import ModelRegistry
+
+            self.add_model_button.setEnabled(True)
+            self.registry = ModelRegistry([*self.registry.all(), spec])
+            self._fill_models(select=spec.id)
+            self.status_label.setText(f"Added model {spec.id}: {spec.description}")
+            self.model_added.emit(spec.id)
+
+        def failed(exc: BaseException) -> None:
+            self.add_model_button.setEnabled(True)
+            self.status_label.setText("Could not add the model.")
+            self._show_error(exc)
+            self.model_added.emit("")
+
+        self._dispatch.run(work, done, failed, name="nf-add-model")
 
     def _fps_changed(self) -> None:
         self.custom_fps.setVisible(self.fps_combo.currentData() == "custom")
@@ -461,11 +579,14 @@ class MainWindow(QMainWindow):
                 self.thumbnail.setPixmap(pix.scaled(self.thumbnail.size(), Qt.AspectRatioMode.KeepAspectRatio,
                                                     Qt.TransformationMode.SmoothTransformation))
             self.frame_spin.setValue(0)
+            self.profile = None
+            self.recommended = None
             self._set_media_controls(True)
             self._update_mode()
             self._set_running(False)
             self.status_label.setText("Ready.")
             self.file_loaded.emit()
+            self._analyse_content()
 
         def failed(exc: BaseException) -> None:
             self.input_path = self.media = None

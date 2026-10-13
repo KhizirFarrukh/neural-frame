@@ -23,8 +23,8 @@ jobs:
       - name: Install (CPU PyTorch, ONNX Runtime CPU, GUI)
         run: |
           python -m pip install --upgrade pip
-          pip install torch --index-url https://download.pytorch.org/whl/cpu
-          pip install -e ".[dev,onnx,gui]"
+          pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+          pip install -e ".[dev,onnx,gui,models]"
       - run: ruff check neuralframe tests benchmarks
       - run: mypy neuralframe
       - name: Tests (GPU and network tests skip themselves)

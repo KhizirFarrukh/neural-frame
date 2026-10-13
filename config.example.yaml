@@ -106,14 +106,16 @@ logging:
   json_output: false    # JSON lines on stderr
   file: null            # also append JSON logs to this file
 
-# Presets map to model, tile overlap and encoder settings. Built-ins: quality, balanced, fast.
+# Presets map to model, tile overlap and encoder settings. Built-ins: quality, balanced, fast. Their model is
+# "auto": each input is analysed and the best model for it is used, among fast models only (fast), fast
+# to slow models (balanced, and presets you add) or all models (quality).
 # Override fields of a built-in or add your own:
 presets:
   balanced:
     speed: medium
   # archive:
   #   description: Slow, near-transparent AV1 archive copies
-  #   model: realesrgan-x4plus
+  #   model: hat-l-x4          # a model id, or auto
   #   codec: av1
   #   speed: slow
   #   quality: {av1: 22}

@@ -146,3 +146,33 @@ def test_invalid_custom_values_are_reported(qtbot: Any, window: MainWindow, clip
     window.custom_fps.setText("0")
     window.start(confirm_overwrite=False)
     assert "frame rate" in window.error_label.text() and window._job_thread is None
+
+
+def test_automatic_model_choice_is_shown(qtbot: Any, window: MainWindow, clip: ClipFactory) -> None:
+    assert window.model_combo.currentData() == "auto"
+    src = clip("gui-auto", width=160, height=90, fps="24", duration=1.0)
+    with qtbot.waitSignal(window.recommendation_ready, timeout=60_000):
+        load(qtbot, window, src)
+    assert window.profile is not None and window.recommended is not None
+    assert window.registry.get(window.recommended).speed == "fast"  # the test window runs on the CPU
+    assert f"<b>{window.recommended}</b>" in window.auto_label.text()
+    choose(window.model_combo, "lanczos")
+    assert window.auto_label.text() == ""
+    choose(window.model_combo, "auto")
+    assert window.recommended in window.auto_label.text()
+    assert window.build_spec().model == "auto"
+
+
+def test_add_your_own_model(qtbot: Any, window: MainWindow, tmp_path: Path) -> None:
+    pytest.importorskip("spandrel")
+    from tests.models import tiny_swinir_file
+
+    file = tiny_swinir_file(tmp_path, "2x-gui-test.safetensors")
+    with qtbot.waitSignal(window.model_added, timeout=60_000) as blocker:
+        window.add_model(file)
+    assert blocker.args == ["2x-gui-test"], window.error_label.text()
+    assert window.model_combo.currentData() == "2x-gui-test"
+    assert "added" in window.model_combo.currentText()
+    with qtbot.waitSignal(window.model_added, timeout=60_000) as blocker:
+        window.add_model(file)  # the same name again
+    assert blocker.args == [""] and "already exists" in window.error_label.text()

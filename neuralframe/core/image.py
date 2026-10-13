@@ -111,7 +111,7 @@ def run_image_job(runner: JobRunner, spec: JobSpec, tools: FFmpegTools, media: M
     if spec.interpolate:
         raise NeuralFrameError(ErrorCode.INVALID_INPUT, "frame generation needs a video; images can only be upscaled")
     video = media.require_video()
-    model = runner.resolve_model(spec)
+    model = runner.resolve_model(spec, tools, media)
     geometry, notes = plan_geometry(video, spec.target, model.scale, even_dims=False, cascade=True)
     alpha = video.pixel_format.has_alpha
     sixteen = bool(spec.ten_bit) or video.bit_depth > 8

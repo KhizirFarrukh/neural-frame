@@ -13,6 +13,8 @@ WHAT YOU NEED
   (version 580 or newer; get it from https://www.nvidia.com/drivers or the NVIDIA App).
   Without one, NeuralFrame still works on the processor, but neural upscaling is very slow.
 * Free disk space: about 6 GB for the program, plus room for your output files (4K videos are large).
+* Internet: not needed, except the first time you use one of the largest models (see "Models" below),
+  which are downloaded then (80 to 250 MB each) and kept for later.
 
 
 HOW TO USE IT
@@ -29,9 +31,24 @@ HOW TO USE IT
 5. Watch the progress bar. When it says Done, use "Open result" or "Show in folder", and compare
    before/after with the slider at the bottom.
 
+Models
+* "Automatic (analyses the video)" is the default and usually the best choice. When you open a file,
+  NeuralFrame looks at it - cartoon or filmed, grainy or clean, blocky from compression, how sharp it
+  really is - and picks the model that suits it. The line under "Model" shows the choice and why.
+* "Preset" decides how much time you are willing to spend:
+     fast      - only the quick models (good for long videos or a first look)
+     balanced  - quick to slow models (the default)
+     quality   - also the very slow "transformer" models (HAT-L, DRCT-L, DAT2, ATD, SwinIR-L), which
+                 create the most convincing detail; expect them to take many times longer
+* You can also pick a model yourself. In the list, "fast", "medium", "slow" and "very-slow" say how
+  long it takes; hover over a model to read what it is good at.
+* Upscaling cannot bring back detail that was never recorded: the models draw new, believable detail
+  (skin, hair, fabric, edges). On very blurry or tiny videos the result looks cleaner and sharper, but
+  not like a real 4K recording.
+* "Add model..." lets you use a model file you downloaded yourself (for example from openmodeldb.info,
+  .pth or .safetensors files). It is checked, copied and then appears in the list.
+
 Tips
-* Model: "Automatic" is a good start. realesr-animevideov3 is fast and great for cartoons and anime;
-  realesrgan-x4plus gives the most detail on real-world video and photos but is slower.
 * The FIRST time you use a model on your graphics card, NeuralFrame optimises it for your card. This
   takes a few minutes once ("building TensorRT engine"); later runs start immediately.
 * Long video? You can press Cancel at any time and then Resume while the program is still open:
@@ -56,12 +73,15 @@ menu). Examples:
     neuralframe-cli.exe upscale "C:\Videos\clip.mp4" -o "C:\Videos\clip_4k.mkv"
     neuralframe-cli.exe upscale clip.mp4 -o clip_4k60.mkv --fps 60
     neuralframe-cli.exe interpolate clip.mp4 -o clip_60fps.mkv
+    neuralframe-cli.exe recommend clip.mp4      (which model "automatic" would use, and why)
+    neuralframe-cli.exe models list             (all models; add your own with "models add FILE")
     neuralframe-cli.exe serve          (web interface on http://127.0.0.1:8765)
     neuralframe-cli.exe doctor         (shows your graphics card and what NeuralFrame will use)
 Run "neuralframe-cli.exe --help" for everything.
 
 Data NeuralFrame keeps on your computer (safe to delete; it is rebuilt when needed):
-    %LOCALAPPDATA%\neuralframe   (optimised models, temporary files, logs)
+    %LOCALAPPDATA%\neuralframe   (downloaded and optimised models, temporary files, logs)
+    %APPDATA%\neuralframe        (models you added yourself: models.yaml)
 
 
 UNINSTALLING
@@ -73,5 +93,7 @@ portable version). Then delete %LOCALAPPDATA%\neuralframe to remove cached data 
 CREDITS AND LICENCES
 --------------------
 See the "licenses" folder. NeuralFrame includes FFmpeg (GPL; source: https://ffmpeg.org), PyTorch (BSD),
-Qt for Python (LGPL), NVIDIA CUDA/cuDNN/TensorRT runtime libraries (NVIDIA licence terms) and AI models
-Real-ESRGAN (BSD-3-Clause), RealBasicVSR (Apache-2.0) and RIFE (MIT).
+Qt for Python (LGPL), spandrel (MIT), NVIDIA CUDA/cuDNN/TensorRT runtime libraries (NVIDIA licence terms)
+and AI models: Real-ESRGAN (BSD-3-Clause), BSRGAN, SwinIR, RealPLKSR, RealBasicVSR (Apache-2.0), HAT-L,
+DRCT-L, DAT2, ATD trained by Philip Hofmann (CC BY 4.0) and RIFE (MIT); the full list with sources is in
+licenses\THIRD-PARTY-NOTICES.txt.

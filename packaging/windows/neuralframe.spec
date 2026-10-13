@@ -29,8 +29,14 @@ hiddenimports = [
 ]
 excludes = [
     "tkinter", "matplotlib", "IPython", "jupyter", "notebook", "pytest", "pytestqt", "_pytest", "playwright",
-    "torchvision", "lpips", "scipy", "PyInstaller", "mypy", "ruff", "setuptools", "pip",
+    "lpips", "scipy", "PyInstaller", "mypy", "ruff", "setuptools", "pip",
 ]
+# spandrel (with torchvision, einops, safetensors) loads the transformer models (HAT, DRCT, DAT, ATD, SwinIR)
+# and model files users add themselves; its architectures are imported through a registry, so collect them all.
+if importlib.util.find_spec("spandrel") is not None:
+    hiddenimports += [*collect_submodules("spandrel"), "einops", "safetensors", "safetensors.torch"]
+else:
+    excludes += ["torchvision"]
 if opts["tensorrt"]:
     hiddenimports += ["tensorrt", "tensorrt_libs"]
     binaries += collect_dynamic_libs("tensorrt_libs")

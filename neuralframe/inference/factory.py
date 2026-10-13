@@ -92,6 +92,26 @@ def available_backends() -> list[str]:
     return names
 
 
+def bf16_supported(device: torch.device) -> bool:
+    """Native bfloat16 (Ampere / RTX 30-series and newer); emulation on older cards is too slow."""
+    if device.type != "cuda":
+        return False
+    try:
+        return bool(torch.cuda.is_bf16_supported(including_emulation=False))
+    except TypeError:  # older PyTorch without the argument
+        return torch.cuda.get_device_capability(device)[0] >= 8
+
+
+def model_precision(model: ModelSpec, requested: str, device: torch.device) -> str:
+    """Precision a model actually runs in: FP32 on the CPU; models that overflow in FP16 (transformers) use
+    bfloat16 where the GPU supports it natively, else FP32."""
+    if device.type != "cuda":
+        return "fp32"
+    if requested == "fp16" and not model.fp16:
+        return "bf16" if bf16_supported(device) else "fp32"
+    return requested
+
+
 def resolve_backend_name(requested: str, device: torch.device) -> str:
     """auto: TensorRT on CUDA when installed, ONNX Runtime on CPU when installed, otherwise PyTorch."""
     available = available_backends()
@@ -223,7 +243,7 @@ def plan_temporal(
     because the chunk length derived from it is part of the job fingerprint."""
     h, w = frame_hw
     eff = "fp32" if device.type == "cpu" else precision
-    factor = 1 if eff == "fp16" else 2
+    factor = 1 if eff in ("fp16", "bf16") else 2
     weights = (model.weights.size_bytes or 0) if model.weights else 0
     usable = capacity_bytes - weights - _SEQ_HEAD_BUDGET - _SEQ_TRANSIENT_BYTES * factor * h * w
     frames = max(4, int(usable // max(_SEQ_STATE_BYTES * factor * h * w, 1)))

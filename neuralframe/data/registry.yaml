@@ -5,15 +5,27 @@
 # scale:        native upscale factor of the network (1 for classical models)
 # window:       temporal window size for window/recurrent models (1 for single-frame)
 # weights:      download URL, SHA256 and licence of the weight file (never committed to git)
-# arch/params:  architecture name and constructor arguments for the PyTorch implementation
+# architecture: PyTorch implementation in neuralframe/inference/archs, or "spandrel" (the network is built
+#               from the checkpoint by the spandrel library: transformer models such as HAT, DRCT, DAT)
+#
+# Fields used by automatic model choice (`-m auto`, neuralframe/models/advisor.py):
+# content:      footage the model is trained for (live-action, animation)
+# handles:      degradations it removes (noise, compression, blur); empty = expects clean input
+# speed:        fast | medium | slow | very-slow (relative; transformers are an order of magnitude slower)
+# rank:         relative output quality for its content (higher = better); calibrated with
+#               benchmarks/quality.py where measured
+# Other fields: backends (allowed inference backends), fp16 (false = bfloat16/FP32), memory_per_pixel
+# (planning estimate, bytes per input pixel at 16-bit), bundled (shipped inside the Windows app).
 
 models:
+  # ---- classical ------------------------------------------------------------------------------------
   - id: lanczos
     kind: classical
     scale: 1
     resize_kernel: lanczos3
     description: Lanczos-3 resampling only (no neural network). Baseline and "no-op" upscale.
     recommended_content: [baseline]
+    speed: fast
     licence: n/a
 
   - id: bicubic
@@ -22,8 +34,56 @@ models:
     resize_kernel: bicubic
     description: Bicubic (Catmull-Rom) resampling only. Quality-evaluation baseline.
     recommended_content: [baseline]
+    speed: fast
     licence: n/a
 
+  # ---- fast and general -------------------------------------------------------------------------------
+  - id: realesr-general-x4v3
+    kind: sr
+    scale: 4
+    architecture: srvgg
+    params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_conv: 32, upscale: 4, act_type: prelu}
+    state_dict_key: params
+    description: >-
+      Real-ESRGAN general v3 (compact). Fast general-purpose model for real-world footage with mild noise and
+      compression; keeps more texture than x4plus. A good default when speed matters.
+    recommended_content: [live-action, general, fast]
+    content: [live-action, animation]
+    handles: [noise, compression]
+    speed: fast
+    rank: 60
+    source_url: https://github.com/xinntao/Real-ESRGAN
+    licence: BSD-3-Clause
+    licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
+    weights:
+      url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-general-x4v3.pth
+      sha256: 8dc7edb9ac80ccdc30c3a5dca6616509367f05fbc184ad95b731f05bece96292
+      filename: realesr-general-x4v3.pth
+      size_bytes: 4885111
+
+  - id: realesr-animevideov3
+    kind: sr
+    scale: 4
+    architecture: srvgg
+    params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_conv: 16, upscale: 4, act_type: prelu}
+    pad_multiple: 1
+    state_dict_key: params
+    description: Real-ESRGAN AnimeVideo v3 (SRVGGNetCompact). Lightweight, built for anime/cartoon video.
+    recommended_content: [animation, anime, cartoons]
+    content: [animation]
+    handles: [noise, compression, blur]
+    speed: fast
+    rank: 75
+    source_url: https://github.com/xinntao/Real-ESRGAN
+    licence: BSD-3-Clause
+    licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
+    weights:
+      url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth
+      sha256: b8a8376811077954d82ca3fcf476f1ac3da3e8a68a4f4d71363008000a18b75d
+      filename: realesr-animevideov3.pth
+      size_bytes: 2504012
+
+  # ---- CNN (ESRGAN family, PLKSR) -------------------------------------------------------------------------
   - id: realesrgan-x4plus
     kind: sr
     scale: 4
@@ -31,8 +91,14 @@ models:
     params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 23, num_grow_ch: 32, scale: 4}
     pad_multiple: 1
     state_dict_key: params_ema
-    description: Real-ESRGAN x4plus. General-purpose model for real-world, compressed live-action footage.
+    description: >-
+      Real-ESRGAN x4plus. Strong at removing heavy noise and compression, but smooths fine texture (skin,
+      hair, foliage can look painted) on good-quality sources.
     recommended_content: [live-action, general, photos]
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 65
     source_url: https://github.com/xinntao/Real-ESRGAN
     licence: BSD-3-Clause
     licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
@@ -49,8 +115,13 @@ models:
     params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 23, num_grow_ch: 32, scale: 2}
     pad_multiple: 2
     state_dict_key: params_ema
-    description: Real-ESRGAN x2plus. Same network at 2x (pixel-unshuffled input); faster per output pixel.
+    description: >-
+      Real-ESRGAN x2plus. The x4plus network at 2x; for degraded sources (it smooths clean ones).
     recommended_content: [live-action, general, photos]
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 55
     source_url: https://github.com/xinntao/Real-ESRGAN
     licence: BSD-3-Clause
     licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
@@ -60,24 +131,205 @@ models:
       filename: RealESRGAN_x2plus.pth
       size_bytes: 67061725
 
-  - id: realesr-animevideov3
+  - id: realesrgan-x4plus-anime
     kind: sr
     scale: 4
-    architecture: srvgg
-    params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_conv: 16, upscale: 4, act_type: prelu}
-    pad_multiple: 1
-    state_dict_key: params
-    description: Real-ESRGAN AnimeVideo v3 (SRVGGNetCompact). Lightweight, built for anime/cartoon video.
-    recommended_content: [animation, anime, cartoons]
+    architecture: rrdbnet
+    params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 6, num_grow_ch: 32, scale: 4}
+    state_dict_key: params_ema
+    description: >-
+      Real-ESRGAN x4plus anime (6 blocks). Sharp lines for anime and illustrations; best on still images
+      (for video, AnimeVideo v3 is steadier between frames).
+    recommended_content: [animation, anime, illustrations]
+    content: [animation]
+    handles: [noise, compression, blur]
+    speed: medium
+    rank: 80
+    stills: true
     source_url: https://github.com/xinntao/Real-ESRGAN
     licence: BSD-3-Clause
     licence_url: https://github.com/xinntao/Real-ESRGAN/blob/master/LICENSE
     weights:
-      url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.5.0/realesr-animevideov3.pth
-      sha256: b8a8376811077954d82ca3fcf476f1ac3da3e8a68a4f4d71363008000a18b75d
-      filename: realesr-animevideov3.pth
-      size_bytes: 2504012
+      url: https://github.com/xinntao/Real-ESRGAN/releases/download/v0.2.2.4/RealESRGAN_x4plus_anime_6B.pth
+      sha256: f872d837d3c90ed2e05227bed711af5671a6fd1c9f7d7e91c911a61f155e99da
+      filename: RealESRGAN_x4plus_anime_6B.pth
+      size_bytes: 17938799
 
+  - id: bsrgan-x4
+    kind: sr
+    scale: 4
+    architecture: spandrel
+    description: >-
+      BSRGAN (ESRGAN network trained on a randomised real-world degradation model). Robust on badly degraded,
+      blurry, noisy footage; PyTorch backend.
+    recommended_content: [live-action, old footage, heavy degradation]
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 70
+    backends: [torch]
+    memory_per_pixel: 9000
+    source_url: https://github.com/cszn/BSRGAN
+    licence: Apache-2.0
+    licence_url: https://github.com/cszn/BSRGAN/blob/main/LICENSE
+    weights:
+      url: https://github.com/cszn/KAIR/releases/download/v1.0/BSRGAN.pth
+      sha256: 5d505a0766160921e0388d76e1ddf08cb114303990f9080432bf2b1c988b1c54
+      filename: BSRGAN.pth
+      size_bytes: 67046751
+
+  - id: realplksr-x2
+    kind: sr
+    scale: 2
+    architecture: spandrel
+    description: >-
+      RealPLKSR 2x (large-kernel CNN, DySample upsampler). Natural 2x upscaling with light handling of blur,
+      noise, JPEG and sharpening artefacts; the efficient choice for 1080p -> 4K. PyTorch backend.
+    recommended_content: [live-action, photos, 1080p to 4K]
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: medium
+    rank: 82
+    backends: [torch]
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://github.com/Phhofm/models/releases/tag/2xPublic_realplksr_dysample_layernorm_real
+    licence: Apache-2.0
+    licence_url: https://www.apache.org/licenses/LICENSE-2.0
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/2xPublic_realplksr_dysample_layernorm_real/2xPublic_realplksr_dysample_layernorm_real.safetensors
+      sha256: 5eb81e8c3e21d57b0ea2aa7931910c97c263c1f23ef9b35fabbd46e98471cd44
+      filename: 2xPublic_realplksr_dysample_layernorm_real.safetensors
+      size_bytes: 29511708
+
+  # ---- transformers: the highest quality, an order of magnitude slower ----------------------------------
+  - id: dat2-real-x4
+    kind: sr
+    scale: 4
+    architecture: spandrel
+    description: >-
+      DAT2 transformer (4xBHI_dat2_real by Philip Hofmann). Restores real-world footage: removes realistic
+      noise, some blur and JPEG/WebP compression while rebuilding natural texture. Very slow.
+    recommended_content: [live-action, web video, phone video, compressed footage]
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 92
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://github.com/Phhofm/models/releases/tag/4xBHI_dat2_real
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xBHI_dat2_real/4xBHI_dat2_real.safetensors
+      sha256: 1f651fe8e2b7ad978eee0db9c8de89b7bbfd9d2d671ffababb9baf6e2d5b38f6
+      filename: 4xBHI_dat2_real.safetensors
+      size_bytes: 139792588
+
+  - id: swinir-l-x4
+    kind: sr
+    scale: 4
+    architecture: spandrel
+    description: >-
+      SwinIR-L real-world (GAN). Transformer trained on the BSRGAN degradation model: strong on heavily
+      degraded live-action footage. Very slow.
+    recommended_content: [live-action, heavy degradation]
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 85
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://github.com/JingyunLiang/SwinIR
+    licence: Apache-2.0
+    licence_url: https://github.com/JingyunLiang/SwinIR/blob/main/LICENSE
+    weights:
+      url: https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth
+      sha256: 99adfa91350a84c99e946c1eb3d8fce34bc28f57d807b09dc8fe40a316328c0a
+      filename: 003_realSR_BSRGAN_DFOWMFC_s64w8_SwinIR-L_x4_GAN.pth
+      size_bytes: 142473939
+
+  - id: hat-l-x4
+    kind: sr
+    scale: 4
+    architecture: spandrel
+    description: >-
+      HAT-L transformer (4xBHI_small_hat-l by Philip Hofmann). Maximum detail for clean, good-quality
+      sources; does not remove noise or compression artefacts. Very slow.
+    recommended_content: [live-action, photos, clean high-quality footage]
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 95
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://github.com/Phhofm/models/releases/tag/4xBHI_small_hat-l
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xBHI_small_hat-l/4xBHI_small_hat-l.safetensors
+      sha256: 054c060bc7ccf9fe788b2d33616f91dcde74b8ed7c1d8bc2dd9b75714e72eb53
+      filename: 4xBHI_small_hat-l.safetensors
+      size_bytes: 165299372
+
+  - id: drct-l-x4
+    kind: sr
+    scale: 4
+    architecture: spandrel
+    description: >-
+      DRCT-L transformer (4xNomos2_hq_drct-l by Philip Hofmann). The largest model here; top detail for
+      clean photography-like footage, no degradation removal. Very slow.
+    recommended_content: [live-action, photos, clean high-quality footage]
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 94
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    pad_multiple: 16
+    bundled: false
+    source_url: https://github.com/Phhofm/models/releases/tag/4xNomos2_hq_drct-l
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomos2_hq_drct-l/4xNomos2_hq_drct-l.safetensors
+      sha256: 1a10632101bb2aca6151301dd811921f1c438ff55159fd579fb576c143477797
+      filename: 4xNomos2_hq_drct-l.safetensors
+      size_bytes: 242543780
+
+  - id: atd-x4
+    kind: sr
+    scale: 4
+    architecture: spandrel
+    description: >-
+      ATD transformer (4xNomos2_hq_atd by Philip Hofmann). High detail for clean footage at about half the
+      size of HAT-L/DRCT-L. Very slow.
+    recommended_content: [live-action, photos, clean footage]
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 90
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 14000
+    bundled: false
+    source_url: https://github.com/Phhofm/models/releases/tag/4xNomos2_hq_atd
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomos2_hq_atd/4xNomos2_hq_atd.safetensors
+      sha256: 0fc5d114b19d1fe3c444e27e87a742f3584fb9bef412339f0c71474e93df39a6
+      filename: 4xNomos2_hq_atd.safetensors
+      size_bytes: 81689540
+
+  # ---- temporal -------------------------------------------------------------------------------------------
   - id: realbasicvsr-x4
     kind: sr
     scale: 4
@@ -90,8 +342,13 @@ models:
     state_dict_prefix: generator_ema.
     description: >-
       RealBasicVSR (temporal). Cleans each frame, then propagates features bidirectionally across the chunk
-      with optical flow; best temporal stability on real-world degraded video. PyTorch backend only.
+      with optical flow; steady on real-world degraded video but strongly sharpened, painterly look.
+      PyTorch backend only.
     recommended_content: [live-action, real-world video]
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 50
     source_url: https://github.com/ckkelvinchan/RealBasicVSR
     licence: Apache-2.0
     licence_url: https://github.com/ckkelvinchan/RealBasicVSR/blob/master/LICENSE
@@ -101,6 +358,7 @@ models:
       filename: realbasicvsr_c64b20_1x30x8_lr5e-5_150k_reds_20211104-52f77c2c.pth
       size_bytes: 148239017
 
+  # ---- frame interpolation --------------------------------------------------------------------------------
   - id: rife-4.22
     kind: interpolation
     scale: 1

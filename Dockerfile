@@ -30,8 +30,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 RUN python3 -m venv /opt/venv
 ENV PATH=/opt/venv/bin:$PATH
-# CUDA 13 PyTorch first, so the package install below does not pull a CPU build.
-RUN pip install "torch>=2.9" --index-url https://download.pytorch.org/whl/cu130
+# CUDA 13 PyTorch (+ torchvision, which spandrel needs for the transformer models) first, so the package
+# install below does not pull a CPU build.
+RUN pip install "torch>=2.9" torchvision --index-url https://download.pytorch.org/whl/cu130
 # The large GPU runtimes get their own layer (same versions as the extras in pyproject.toml), so changing
 # NeuralFrame's code or docs only re-runs the quick install below instead of downloading ~4 GB again.
 RUN pip install "tensorrt-cu13>=10.0,<11" "onnx>=1.16" "onnxruntime-gpu>=1.18"
@@ -39,7 +40,7 @@ WORKDIR /src
 COPY pyproject.toml CMakeLists.txt README.md ./
 COPY native native
 COPY neuralframe neuralframe
-RUN pip install ".[tensorrt,onnx-gpu]" && cd / && python -c "import neuralframe._native as n; print(n.build_info())"
+RUN pip install ".[tensorrt,onnx-gpu,models]" && cd / && python -c "import neuralframe._native as n; print(n.build_info())"
 
 # ---- runtime ---------------------------------------------------------------------------------------------
 FROM ubuntu:${UBUNTU}

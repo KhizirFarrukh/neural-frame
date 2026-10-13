@@ -4,7 +4,8 @@ Produces build/release/NeuralFrame-<version>-win64/ with
     NeuralFrame.exe      desktop app (double-click; no console window)
     neuralframe-cli.exe  command line (a separate name: Windows file names ignore case)
     ffmpeg/              FFmpeg 9 (checksum-pinned static build with NVENC/NVDEC)
-    models/              AI model weights (works offline from the first start)
+    models/              AI model weights (works offline from the first start; the very large transformer
+                         models are downloaded on first use instead, see `bundled` in registry.yaml)
     README.txt, licenses/
 smoke-tests that folder as a user would run it (fresh cache, bundled FFmpeg and models only), then packs
 it into a per-user installer (Inno Setup, when installed) and/or a portable zip, with SHA256SUMS.txt.
@@ -48,7 +49,7 @@ DATACENTER_ARCHS = ("sm80", "sm90", "sm100", "sm103", "sm110", "sm121")
 NOTICE_DISTS = ["torch", "tensorrt-cu13", "tensorrt-cu13-libs", "tensorrt-cu13-bindings", "onnxruntime-gpu",
                 "pyside6-essentials", "shiboken6", "numpy", "av", "pydantic", "pydantic-settings", "fastapi",
                 "starlette", "uvicorn", "sqlalchemy", "typer", "click", "rich", "structlog", "httpx", "pillow",
-                "pyyaml", "psutil", "nvidia-ml-py", "onnx"]
+                "pyyaml", "psutil", "nvidia-ml-py", "onnx", "torchvision", "spandrel", "einops", "safetensors"]
 
 
 def step(text: str) -> None:
@@ -78,7 +79,7 @@ def preflight(args: argparse.Namespace) -> dict[str, str]:
     if sys.platform != "win32":
         raise SystemExit("the Windows release must be built on Windows")
     found: dict[str, str] = {}
-    required = ["PyInstaller", "PySide6", "torch", "neuralframe._native"]
+    required = ["PyInstaller", "PySide6", "torch", "torchvision", "spandrel", "neuralframe._native"]
     if args.tensorrt:
         required.append("tensorrt")
     if args.onnxruntime:
@@ -86,6 +87,8 @@ def preflight(args: argparse.Namespace) -> dict[str, str]:
     for module in required:
         if importlib.util.find_spec(module) is None:
             hint = {"PyInstaller": "pip install pyinstaller", "PySide6": 'pip install -e ".[gui]"',
+                    "torchvision": "pip install torchvision --index-url https://download.pytorch.org/whl/cu130",
+                    "spandrel": 'pip install -e ".[models]"',
                     "neuralframe._native": "pip install --no-build-isolation -e ."}.get(module, "")
             raise SystemExit(f"missing {module}. {hint}")
     import torch
@@ -199,8 +202,12 @@ def add_models(app: Path) -> None:
     from neuralframe.models.registry import ModelRegistry
 
     settings = load_settings(None)
-    for spec in ModelRegistry.load().all():
+    for spec in ModelRegistry.load(user=False).all():
         if spec.weights is None:
+            continue
+        if not spec.bundled:
+            size = (spec.weights.size_bytes or 0) / 1e6
+            print(f"  {spec.id}: downloaded on first use ({size:.0f} MB, {spec.licence})")
             continue
         src = ensure_weights(spec, settings.paths.models())
         dst = app / "models" / spec.id / spec.weights.filename
@@ -229,6 +236,13 @@ def prune(app: Path, args: argparse.Namespace) -> None:
     print(f"  removed {gb(removed)} not needed at run time")
 
 
+def model_credits() -> list[str]:
+    from neuralframe.models.registry import ModelRegistry
+
+    return [f"  {'*' if not m.bundled else ' '}{m.id} - {m.licence} - {m.source_url}"
+            for m in ModelRegistry.load(user=False).all() if m.weights is not None]
+
+
 def add_docs(app: Path, version: str, found: dict[str, str]) -> None:
     (app / "README.txt").write_text((HERE / "README.txt").read_text(encoding="utf-8").replace("{version}", version),
                                     encoding="utf-8")
@@ -242,10 +256,8 @@ def add_docs(app: Path, version: str, found: dict[str, str]) -> None:
     lines = [f"NeuralFrame {version} - third-party components", "=" * 60, "",
              "FFmpeg 9.0.2 (static build by BtbN, GPL v3; https://ffmpeg.org, build scripts and sources: "
              "https://github.com/BtbN/FFmpeg-Builds). Runs as a separate program (ffmpeg/ffmpeg.exe).",
-             "AI models (downloaded from their authors, unmodified):",
-             "  Real-ESRGAN x4plus / x2plus / AnimeVideo-v3 - BSD-3-Clause - https://github.com/xinntao/Real-ESRGAN",
-             "  RealBasicVSR - Apache-2.0 - https://github.com/ckkelvinchan/RealBasicVSR",
-             "  RIFE 4.22 (Practical-RIFE) - MIT - https://github.com/hzwer/Practical-RIFE",
+             "AI models (weights from their authors, unmodified; * = downloaded on first use, not included):",
+             *model_credits(),
              "NVIDIA CUDA, cuDNN and TensorRT runtime libraries are redistributed under NVIDIA's licence terms "
              "(see the NVIDIA notices in the respective packages).", "",
              "Python packages included:"]
@@ -325,6 +337,12 @@ def smoke_test(app: Path, version: str, args: argparse.Namespace) -> dict[str, o
                                  "fps": rep["throughput"]["pipeline_fps"]}  # type: ignore[index]
             if args.tensorrt:
                 assert runner.get("backend") == "tensorrt", f"expected TensorRT, got {runner.get('backend')}"
+            # A model loaded through spandrel (PyTorch only): checks the frozen spandrel/torchvision.
+            out_b = tmp / "bsrgan.mkv"
+            run(str(cli), "upscale", str(clip), "-o", str(out_b), "-m", "bsrgan-x4", "--target", "x2", "-y")
+            results["spandrel"] = report(out_b)["throughput"]["pipeline_fps"]  # type: ignore[index]
+        choice = json.loads(run(str(cli), "recommend", str(clip), "--json").stdout)
+        results["recommend"] = {"model": choice["model"], "content": choice["profile"]["content"]}
         if not args.no_models:
             out_f = tmp / "fg.mkv"
             run(str(cli), "interpolate", str(clip), "-o", str(out_f), "--fps", "60", "-y")
@@ -336,7 +354,10 @@ def smoke_test(app: Path, version: str, args: argparse.Namespace) -> dict[str, o
         if not gui.get("ok"):
             print(json.dumps(gui, indent=2))
             raise SystemExit("GUI self-test failed")
-        results["gui"] = {k: gui.get(k) for k in ("ffmpeg", "torch", "cuda", "gpu", "tensorrt", "sample_info")}
+        results["gui"] = {k: gui.get(k) for k in ("ffmpeg", "torch", "cuda", "gpu", "tensorrt", "spandrel",
+                                                  "sample_info", "auto_model")}
+        if not gui.get("spandrel"):
+            raise SystemExit(f"spandrel is not usable in the package: {gui.get('spandrel_error')}")
         missing = [m for m, ok in gui.get("models_available", {}).items() if not ok]
         if missing and not args.no_models:
             raise SystemExit(f"models missing in the package: {missing}")

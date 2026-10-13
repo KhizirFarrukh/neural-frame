@@ -39,6 +39,13 @@ def default_cache_dir() -> Path:
     return Path(os.environ.get("XDG_CACHE_HOME", Path.home() / ".cache")) / "neuralframe"
 
 
+def user_config_dir() -> Path:
+    """Per-user settings folder: %APPDATA%\\neuralframe (Windows) or ~/.config/neuralframe."""
+    if sys.platform == "win32":
+        return Path(os.environ.get("APPDATA", Path.home())) / "neuralframe"
+    return Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "neuralframe"
+
+
 def default_config_path() -> Path | None:
     """First existing of: $NEURALFRAME_CONFIG, ./config.yaml, user config dir."""
     env = os.environ.get("NEURALFRAME_CONFIG")
@@ -47,10 +54,7 @@ def default_config_path() -> Path | None:
     local = Path.cwd() / "config.yaml"
     if local.is_file():
         return local
-    if sys.platform == "win32":
-        user = Path(os.environ.get("APPDATA", Path.home())) / "neuralframe" / "config.yaml"
-    else:
-        user = Path(os.environ.get("XDG_CONFIG_HOME", Path.home() / ".config")) / "neuralframe" / "config.yaml"
+    user = user_config_dir() / "config.yaml"
     return user if user.is_file() else None
 
 

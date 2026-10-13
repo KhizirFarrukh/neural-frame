@@ -44,8 +44,15 @@ def bytes_per_input_pixel(model: ModelSpec | None, precision: str) -> int:
     """
     arch = model.architecture if model else "rrdbnet"
     scale = model.scale if model else 4
-    per_px = 560 * scale * scale if arch == "rrdbnet" else 620
-    return per_px * (1 if precision == "fp16" else 2)
+    if model is not None and model.memory_per_pixel:
+        per_px = model.memory_per_pixel  # registry estimate (transformers, spandrel models)
+    elif arch == "rrdbnet":
+        per_px = 560 * scale * scale
+    elif arch == "spandrel":
+        per_px = 16000  # unknown architecture: assume transformer-sized; calibration measures the truth
+    else:
+        per_px = 620
+    return per_px * (1 if precision in ("fp16", "bf16") else 2)
 
 
 class InferenceBackend(ABC):
@@ -60,7 +67,7 @@ class InferenceBackend(ABC):
 
     @property
     def dtype(self) -> torch.dtype:
-        return torch.float16 if self.precision == "fp16" else torch.float32
+        return {"fp16": torch.float16, "bf16": torch.bfloat16}.get(self.precision, torch.float32)
 
     @property
     def is_cuda(self) -> bool:
