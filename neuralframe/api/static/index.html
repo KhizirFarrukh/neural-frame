@@ -119,7 +119,7 @@
       </div>
       <div id="modelOpts">
         <label for="model">Model</label>
-        <select id="model"><option value="">Automatic (analyses the video)</option></select>
+        <select id="model"><option value="">Automatic: picks the right model for your video (auto)</option></select>
       </div>
       <div>
         <label for="preset">Preset</label>
@@ -241,13 +241,22 @@ async function loadSystem() {
       $("preset").appendChild(o);
     }
     const models = await api("GET", "/v1/models");
+    const groups = new Map();  // category heading -> <optgroup>
+    const order = new Map();
     for (const m of models.filter(m => m.kind !== "interpolation")) {
+      order.set(m.category_title, m.category_order);
+      if (!groups.has(m.category_title)) {
+        const g = document.createElement("optgroup"); g.label = m.category_title;
+        groups.set(m.category_title, g);
+      }
       const o = document.createElement("option"); o.value = m.id;
-      const extras = [m.speed, m.input !== "single" ? m.input : null, m.origin === "user" ? "added" : null].filter(Boolean);
-      o.textContent = `${m.id} (x${m.scale}${extras.length ? ", " + extras.join(", ") : ""})`;
-      o.title = m.description || "";
-      $("model").appendChild(o);
+      const download = !m.weights_present && m.weights ? `download ${Math.round((m.weights.size_bytes || 0) / 1e6)} MB` : null;
+      const marks = [download, m.licence_restricted ? "personal use only" : null, m.origin === "user" ? "added" : null].filter(Boolean);
+      o.textContent = m.label + marks.map(x => `  [${x}]`).join("");
+      o.title = `${m.description || ""}\nLicence: ${m.licence}\n${m.status_text || ""}`;
+      groups.get(m.category_title).appendChild(o);
     }
+    [...groups.keys()].sort((a, b) => order.get(a) - order.get(b)).forEach(t => $("model").appendChild(groups.get(t)));
   } catch (e) { $("sys").textContent = "service unavailable: " + e.message; }
 }
 

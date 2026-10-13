@@ -1,12 +1,15 @@
 # Model cards
 
-The source code never contains weights: they are downloaded on first use from their authors' URLs,
-verified against the pinned SHA256 and cached (`<cache>/models/<id>/`). The Windows app includes the
-models marked *bundled* below; the others download on first use there too. `neuralframe models list`
-shows the registry, `neuralframe models download <id>` fetches ahead of time, `neuralframe models export
-<id>` builds the ONNX file and checks TensorRT/ONNX Runtime parity against PyTorch (not for the models
-loaded through spandrel, which run in PyTorch only). The registry lives in `neuralframe/data/registry.yaml`;
-models you add yourself (`neuralframe models add`) are recorded in `models.yaml` in your settings folder.
+Model files are never in the source code or, by default, in the Windows app: each one is downloaded
+from its authors' URL when it is first chosen (or from the app's Models window / `neuralframe models
+download`), checked against the pinned SHA256 and kept in `<cache>/models/<id>/`. A Windows build made
+with `--with-models` includes the models marked *bundled*. Files you already have can be used instead
+(`neuralframe models link`, or a folder in `paths.model_search_paths`), and models hosted as Hugging Face
+files or GitHub release assets can be checked for updates. The registry lives in
+`neuralframe/data/registry.yaml`; models you add yourself (`neuralframe models add`) are recorded in
+`models.yaml` in your settings folder. `neuralframe models export <id>` builds the ONNX file and checks
+TensorRT/ONNX Runtime parity against PyTorch (not for models loaded through spandrel, which run in PyTorch
+only).
 
 Speeds are end-to-end (decode -> model -> encode) on an RTX 4060 Laptop GPU (8 GB) from
 `docs/BENCHMARKS.md`; quality numbers come from `docs/BENCHMARKS.md#quality` (Sintel trailer, CC BY 3.0).
@@ -33,7 +36,113 @@ on video, and for 2x models when the job needs more than about 2.5x. The registr
 The ranks are a first calibration from published results and spot checks; `benchmarks/quality.py` measures
 every model on animated (Sintel) and filmed (Tears of Steel) references to refine them.
 
-## Super-resolution
+## All models by purpose
+
+What each model is for, its name (use it with `-m`), size and licence. *Rank* > 0: used by automatic choice (measured models); the others are chosen by you. **NC** = non-commercial licence (personal use only). Detailed cards for the core models follow below.
+
+### Filmed video & photos
+
+| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Any video, quick all-rounder | `realesr-general-x4v3` | 4x | fast | 5 MB | BSD-3-Clause | 60 | [link](https://github.com/xinntao/Real-ESRGAN) |
+| Good-quality video to 2x, e.g. 1080p to 4K | `realplksr-x2` | 2x | medium | 30 MB | Apache-2.0 | 82 | [link](https://github.com/Phhofm/models/releases/tag/2xPublic_realplksr_dysample_layernorm_real) |
+| Clean filmed video & photos, most detail | `hat-l-x4` | 4x | very slow | 165 MB | CC-BY-4.0 | 95 | [link](https://github.com/Phhofm/models/releases/tag/4xBHI_small_hat-l) |
+| Clean filmed video & photos, largest model | `drct-l-x4` | 4x | very slow | 243 MB | CC-BY-4.0 | 94 | [link](https://github.com/Phhofm/models/releases/tag/4xNomos2_hq_drct-l) |
+| Clean filmed video & photos, high detail | `atd-x4` | 4x | very slow | 82 MB | CC-BY-4.0 | 90 | [link](https://github.com/Phhofm/models/releases/tag/4xNomos2_hq_atd) |
+| Clean photos & video, very high detail | `4x-nomos2-hq-dat2` | 4x | very slow | 140 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Nomos2-hq-dat2) |
+| Clean photos & video | `4x-nomos2-hq-mosr` | 4x | medium | 17 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Nomos2-hq-mosr) |
+| Clean photos, natural look | `4x-lsdir` | 4x | slow | 67 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-LSDIR) |
+| Everyday photos (people, pets, events) | `4x-purephoto-span` | 4x | fast | 9 MB | CC-BY-SA-4.0 | - | [link](https://openmodeldb.info/models/4x-PurePhoto-span) |
+| Everyday photos (people, pets, events), more detail | `4x-purephoto-realplksr` | 4x | medium | 30 MB | CC-BY-SA-4.0 | - | [link](https://openmodeldb.info/models/4x-PurePhoto-RealPLSKR) |
+
+### Old, damaged or very low quality
+
+| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Damaged filmed footage & photos | `realesrgan-x4plus` | 4x | slow | 67 MB | BSD-3-Clause | 65 | [link](https://github.com/xinntao/Real-ESRGAN) |
+| Damaged filmed footage & photos (2x) | `realesrgan-x2plus` | 2x | slow | 67 MB | BSD-3-Clause | 55 | [link](https://github.com/xinntao/Real-ESRGAN) |
+| Badly degraded, blurry or noisy footage | `bsrgan-x4` | 4x | slow | 67 MB | Apache-2.0 | 70 | [link](https://github.com/cszn/BSRGAN) |
+| Real-world footage with noise & compression, best repair | `dat2-real-x4` | 4x | very slow | 140 MB | CC-BY-4.0 | 92 | [link](https://github.com/Phhofm/models/releases/tag/4xBHI_dat2_real) |
+| Heavily degraded footage, strong repair | `swinir-l-x4` | 4x | very slow | 142 MB | Apache-2.0 | 85 | [link](https://github.com/JingyunLiang/SwinIR) |
+| Noisy real-world video, steady between frames | `realbasicvsr-x4` | 4x | slow | 148 MB | Apache-2.0 | 50 | [link](https://github.com/ckkelvinchan/RealBasicVSR) |
+| Low-quality web, phone & social-media photos and video | `4x-realwebphoto-v4-dat2` | 4x | very slow | 140 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-RealWebPhoto-v4-dat2) |
+| Very low-quality web & phone footage, strongest repair | `4x-realwebphoto-v4-drct-l` | 4x | very slow | 243 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-RealWebPhoto-v4-drct-l) |
+| Web & phone photos and video, high detail | `4x-nomoswebphoto-atd` | 4x | very slow | 82 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-NomosWebPhoto-atd) |
+| Web & phone photos and video | `4x-nomoswebphoto-realplksr` | 4x | medium | 30 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-NomosWebPhoto-RealPLKSR) |
+| Damaged photos & video (blur, noise, JPEG) | `4x-nomos2-otf-esrgan` | 4x | slow | 34 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Nomos2-otf-esrgan) |
+| Compressed photos & video | `4x-nomos2-realplksr-dysample` | 4x | medium | 30 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Nomos2-realplksr-dysample) |
+| JPEG-damaged photos, high detail | `4x-nomos8k-atd-jpg` | 4x | very slow | 82 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Nomos8k-atd-jpg) |
+| Blurry or JPEG photos (HAT) | `4x-nomos8kschat-s` | 4x | very slow | 81 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Nomos8kSCHAT-S) |
+| Blurry or JPEG photos (ESRGAN) | `4x-nomos8ksc` | 4x | slow | 67 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Nomos8kSC) |
+| Photos with noise, blur & JPEG | `4x-lsdirplusr` | 4x | slow | 67 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-LSDIRplusR) |
+| JPEG-compressed photos | `4x-lsdirplusc` | 4x | slow | 67 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-LSDIRplusC) |
+| Compressed TV, film & streaming video (2x) | `2x-liveactionv1-span` | 2x | fast | 9 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-LiveActionV1-SPAN) |
+| VHS tapes & old TV recordings (2x) | `2x-vhs2hd` | 2x | medium | 30 MB | CC-BY-SA-4.0 | - | [link](https://openmodeldb.info/models/2x-VHS2HD) |
+| Degraded real-world photos (SwinIR-M) | `swinir-m-x4` | 4x | very slow | 67 MB | Apache-2.0 | - | [link](https://openmodeldb.info/models/4x-realSR-BSRGAN-DFO-s64w8-SwinIR-M-x4-GAN) |
+| Degraded real-world photos, 2x (SwinIR-M) | `swinir-m-x2` | 2x | very slow | 67 MB | Apache-2.0 | - | [link](https://openmodeldb.info/models/2x-realSR-BSRGAN-DFO-s64w8-SwinIR-M-x2-GAN) |
+| Badly degraded footage, 2x (BSRGAN) | `bsrgan-x2` | 2x | slow | 67 MB | Apache-2.0 | - | [link](https://openmodeldb.info/models/2x-BSRGAN) |
+| Tiny clean images, 8x in one step (smooth, no repair) | `swinir-m-classical-x8` | 8x | very slow | 68 MB | Apache-2.0 | - | [link](https://openmodeldb.info/models/8x-classicalSR-DF2K-s64w8-SwinIR-M) |
+
+### Cartoons & anime
+
+| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Cartoons & anime video | `realesr-animevideov3` | 4x | fast | 3 MB | BSD-3-Clause | 75 | [link](https://github.com/xinntao/Real-ESRGAN) |
+| Anime pictures & illustrations | `realesrgan-x4plus-anime` | 4x | medium | 18 MB | BSD-3-Clause | 80 | [link](https://github.com/xinntao/Real-ESRGAN) |
+| Anime, sharpest lines (2x) | `2x-animesharpv4` | 2x | slow | 31 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-AnimeSharpV4) |
+| Anime, sharp lines, faster (2x) | `2x-animesharpv4-fast` | 2x | slow | 31 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-AnimeSharpV4-Fast-RCAN-PU) |
+| HD anime to 4K, real-time capable (2x) | `2x-animejanai-hd-v3-compact` | 2x | fast | 5 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-AnimeJaNai-HD-V3-Compact) |
+| HD anime to 4K, faster (2x) | `2x-animejanai-hd-v3-ultracompact` | 2x | fast | 2 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-AnimeJaNai-HD-V3-UltraCompact) |
+| HD anime to 4K, fastest (2x) | `2x-animejanai-hd-v3-superultracompact` | 2x | fast | 0 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-AnimeJaNai-HD-V3-SuperUltraCompact) |
+| Anime from DVD & web releases (2x) | `2x-aniscale-2-esrgan` | 2x | slow | 67 MB | CC-BY-NC-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-AniScale-2-ESRGAN) |
+| Anime from DVD & web releases (2x) | `2x-aniscale-2-omnisr` | 2x | fast | 3 MB | CC-BY-NC-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-AniScale-2-OmniSR) |
+| Modern anime, Blu-ray to poor web rips (2x) | `2x-ani4vk-v2-compact` | 2x | fast | 2 MB | CC-BY-NC-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-Ani4VK-v2-Compact) |
+| Anime with compression, noise & blur (4x) | `4x-hfa2k-ludvae-realplksr` | 4x | medium | 30 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-HFA2k-ludvae-realplksr-dysample) |
+| Anime with compression, noise & blur, small transformer (4x) | `4x-hfa2k-ludvae-swinir-light` | 4x | slow | 17 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-HFA2kLUDVAESwinIR-light) |
+| Anime video with H.264 compression (2x) | `2x-hfa2k-avc-compact` | 2x | fast | 5 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/2x-HFA2kAVCCompact) |
+| Modern western cartoons & animation (2x) | `2x-modernspanimation-v1` | 2x | fast | 16 MB | MIT | - | [link](https://openmodeldb.info/models/2x-ModernSpanimationV1) |
+| Flat-colour 2D cartoons (2x) | `2x-starsample-v2` | 2x | slow | 67 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-StarSample-V2) |
+| Flat-colour 2D cartoons (2x) | `2x-starsample-v2-lite` | 2x | fast | 9 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/2x-StarSample-V2-Lite) |
+| Anime from DVD, soft look (4x) | `4x-drawimation-compact` | 4x | fast | 3 MB | CC-BY-SA-4.0 | - | [link](https://openmodeldb.info/models/4x-Drawimation-compact) |
+| Anime films (4x) | `4x-anifilm-compact` | 4x | fast | 3 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/4x-anifilm-compact) |
+| Grainy hand-drawn animation from old DVDs (2x) | `2x-digitalfilm-v5-lite` | 2x | medium | 8 MB | WTFPL | - | [link](https://openmodeldb.info/models/2x-DigitalFilmV5-Lite) |
+
+### AI images & digital art
+
+| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Pictures of any kind, very sharp (photos, art, anime) | `4x-ultrasharpv2` | 4x | very slow | 140 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/4x-UltraSharpV2) |
+| AI-generated images (Stable Diffusion, Midjourney...) | `4x-lexicahat` | 4x | very slow | 85 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-LexicaHAT) |
+| AI-generated images, 2x | `2x-lexicaswinir` | 2x | very slow | 59 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/2x-LexicaSwinIR) |
+| Faces in paintings, drawings & AI art | `4x-artfaces-realplksr` | 4x | medium | 30 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-ArtFaces-realplksr-dysample) |
+| AI images & photos: invents fine, realistic detail | `aurasr-v2` | 4x | very slow | 2470 MB | Apache-2.0 | - | [link](https://huggingface.co/fal/AuraSR-v2) |
+
+### Games, textures & pixel art
+
+| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Old game textures, best quality | `4x-pbrify-v4` | 4x | very slow | 140 MB | CC0-1.0 | - | [link](https://openmodeldb.info/models/4x-PBRify-UpscalerV4) |
+| Old game textures | `4x-pbrify-span-v4` | 4x | fast | 9 MB | CC0-1.0 | - | [link](https://openmodeldb.info/models/4x-PBRify-UpscalerSPANV4) |
+| Realistic game textures | `4x-textures-gtav-rgt-s` | 4x | very slow | 136 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-Textures-GTAV-rgt-s) |
+| Game textures & renders (2x) | `2x-aomr-mosr` | 2x | medium | 17 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/2x-AoMR-mosr) |
+| Pixel art & MS Paint drawings (8x) | `8x-ms-unpainter` | 8x | slow | 67 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/8x-MS-Unpainter) |
+
+### Text, documents & comics
+
+| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Low-quality text, screenshots & scans (2x) | `2x-text2hd` | 2x | medium | 30 MB | CC-BY-SA-4.0 | - | [link](https://openmodeldb.info/models/2x-Text2HD-v-1) |
+| Printed photos & comics: removes halftone dots | `4x-dwtp-ds-dat2-v3` | 4x | very slow | 140 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-DWTP-DS-dat2-v3) |
+| Manga & comic scans | `4x-wtp-uds-esrgan` | 4x | slow | 67 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-WTP-UDS-Esrgan) |
+
+### Plain resizing (no AI)
+
+| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Plain resize, sharp edges | `lanczos` | 1x | fast | - | n/a | - | - |
+| Plain resize, soft | `bicubic` | 1x | fast | - | n/a | - | - |
+
+## Super-resolution: core models
 
 ### hat-l-x4
 

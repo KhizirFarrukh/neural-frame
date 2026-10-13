@@ -51,11 +51,13 @@ from neuralframe.ops import FrameOps, get_ops
 
 if TYPE_CHECKING:
     from neuralframe.inference.factory import InferencePlan
+    from neuralframe.models.library import ModelLibrary
 
 log = get_logger(component="job")
 
 JobState = Literal[
-    "queued", "probing", "planning", "running", "muxing", "verifying", "done", "failed", "cancelled", "paused"
+    "queued", "probing", "planning", "downloading", "running", "muxing", "verifying", "done", "failed", "cancelled",
+    "paused",
 ]
 
 
@@ -119,11 +121,15 @@ class ProgressEvent:
     fps: float = 0.0
     stages: tuple[StageSnapshot, ...] = ()
     gpu: dict[str, Any] | None = None
+    download: dict[str, Any] | None = None
+    """While a model is downloaded: model, label, done / total bytes, speed, time left, text."""
 
     @property
     def percent(self) -> float:
         if self.state == "done":
             return 100.0
+        if self.state == "downloading" and self.download and self.download.get("total"):
+            return min(100.0, 100.0 * float(self.download["done"]) / float(self.download["total"]))
         if self.frames_total <= 0:
             return 0.0
         return min(100.0, 100.0 * self.frames_done / self.frames_total)
@@ -141,6 +147,7 @@ class ProgressEvent:
             "fps": round(self.fps, 2),
             "stages": [s.__dict__ for s in self.stages],
             "gpu": self.gpu,
+            "download": self.download,
         }
 
 
@@ -309,6 +316,8 @@ class JobRunner:
         self._calibration: dict[str, Any] | None = None
         self._resume_info: dict[str, Any] = {"mode": "fresh"}
         self.model_choice: dict[str, Any] | None = None
+        self._download: dict[str, Any] | None = None
+        self._library: ModelLibrary | None = None
         """Set when ``model`` was ``auto``: the content analysis and why the model was picked."""
         self._vram_reserve = 0
         """VRAM kept free for frame interpolation sharing the super-resolution device."""
@@ -350,9 +359,13 @@ class JobRunner:
                 str(i): {"used_mb": s.used_mb, "total_mb": s.total_mb, "util_pct": s.utilization_pct}
                 for i, s in self._sampler.current().items()
             }
+        download = self._download if state == "downloading" else None
+        if download is not None:
+            eta = download.get("eta_s")
         event = ProgressEvent(
             job_id=self.job_id, state=state, message=message, frames_done=done,
             frames_total=self._frames_total, elapsed_s=elapsed, eta_s=eta, fps=fps, stages=tuple(snaps), gpu=gpu,
+            download=download,
         )
         try:
             self.progress(event)
@@ -388,8 +401,38 @@ class JobRunner:
         model_id = spec.model or preset.model or "auto"
         if model_id == "auto":
             model_id = self.recommend_model(spec, tools, media)
-        return self.registry.get(model_id)
+        # The weights actually used (an installed update or the user's own linked file): engine caches and
+        # resume keys then follow the real file.
+        return self.library.effective_spec(self.registry.get(model_id))
 
+    @property
+    def library(self) -> ModelLibrary:
+        """The model library (downloads on demand, local files, updates)."""
+        if self._library is None:
+            from neuralframe.models.library import ModelLibrary
+
+            self._library = ModelLibrary.from_settings(self.settings)
+        return self._library
+
+    def fetch_model(self, model: ModelSpec) -> Path:
+        """The model's file; downloads it first when it is not on this computer (``downloading`` progress
+        with bytes, speed and time left; cancelling the job cancels the download, keeping the part done)."""
+        from neuralframe.models.library import DownloadProgress
+
+        if self.library.is_ready(model):
+            return Path(self.library.ensure(model))
+        label = model.label
+        self._emit("downloading", f"downloading {label}")
+
+        def on_progress(event: DownloadProgress) -> None:
+            self._download = {"model": model.id, "label": label, "done": event.done, "total": event.total,
+                              "speed_bps": round(event.speed_bps), "eta_s": event.eta_s, "text": event.text()}
+            self._emit("downloading", f"downloading {label}: {event.text()}")
+
+        try:
+            return Path(self.library.ensure(model, progress=on_progress, cancel=self.cancel))
+        finally:
+            self._download = None
     def recommend_model(self, spec: JobSpec, tools: FFmpegTools | None, media: MediaInfo | None) -> str:
         """Automatic model choice (models/advisor.py); records the reasons in :attr:`model_choice`."""
         fallback = "realesr-general-x4v3"
@@ -537,13 +580,11 @@ class JobRunner:
             )
             output_chunk = spec.chunk_frames or settings.chunking.chunk_frames
             if engine == "rife":
-                from neuralframe.models.download import ensure_weights
-
                 retime = plan_retime(analysis, fg_cuts, out_fps, drops, max_gap_s=fg.max_gap_s)
                 output_frames = retime.frames
-                fg_model = self.registry.get(fg.model)
+                fg_model = self.library.effective_spec(self.registry.get(fg.model))
+                fg_weights = self.fetch_model(fg_model)
                 self._emit("planning", f"preparing frame generation model {fg_model.id}")
-                fg_weights = ensure_weights(fg_model, settings.paths.models())
                 framegen = {"engine": "rife", "model": fg_model.id, "order": fg_order, **retime.summary()}
                 notes += retime.notes
             else:
@@ -707,16 +748,9 @@ class JobRunner:
             torch_cuda_available,
             torch_cuda_device_count,
         )
-        from neuralframe.models.download import ensure_weights
-
         settings = self.settings
+        weights = self.fetch_model(model)
         self._emit("planning", f"preparing model {model.id}")
-
-        def on_download(done: int, total: int | None) -> None:
-            pct = f" {100 * done / total:.0f}%" if total else ""
-            self._emit("planning", f"downloading {model.id}{pct}")
-
-        weights = ensure_weights(model, settings.paths.models(), progress=on_download)
         if settings.inference.device == "cuda" and not torch_cuda_available():
             raise NeuralFrameError(ErrorCode.BACKEND_UNAVAILABLE, "inference.device=cuda but CUDA is not available")
         device = resolve_device(spec.gpus or settings.inference.gpus, force_cpu=settings.inference.device == "cpu")

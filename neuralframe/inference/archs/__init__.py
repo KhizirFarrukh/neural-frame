@@ -64,12 +64,45 @@ def load_spandrel(weights: Path, *, expect_scale: int | None = None, model_id: s
     return descriptor
 
 
+class SizeGuard(nn.Module):
+    """Pads the input to the size a network needs (multiple of N, minimum side, square) and crops the
+    output back, so a registry entry can never send a tile the network cannot take."""
+
+    def __init__(self, net: nn.Module, *, scale: int, multiple: int, minimum: int, square: bool) -> None:
+        super().__init__()
+        self.net = net
+        self.scale = scale
+        self.multiple = max(1, multiple)
+        self.minimum = max(1, minimum)
+        self.square = square
+
+    def _target(self, size: int) -> int:
+        size = max(size, self.minimum)
+        return -(-size // self.multiple) * self.multiple
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        h, w = int(x.shape[-2]), int(x.shape[-1])
+        th, tw = self._target(h), self._target(w)
+        if self.square:
+            th = tw = max(th, tw)
+        if (th, tw) == (h, w):
+            return self.net(x)
+        padded = torch.nn.functional.pad(x, (0, tw - w, 0, th - h), mode="replicate")
+        out = self.net(padded)
+        return out[..., : h * self.scale, : w * self.scale]
+
+
 def load_network(spec: ModelSpec, weights: Path) -> nn.Module:
     """Build the network and load a checkpoint safely (``weights_only=True``: tensors only, no code)."""
     if spec.architecture == "spandrel":
         descriptor = load_spandrel(weights, expect_scale=spec.scale, model_id=spec.id)
         net: nn.Module = descriptor.model
+        need = descriptor.size_requirements
+        if int(need.multiple_of) > 1 or int(need.minimum) > 1 or bool(need.square):
+            net = SizeGuard(net, scale=int(descriptor.scale), multiple=int(need.multiple_of),
+                            minimum=int(need.minimum), square=bool(need.square))
         net.nf_supports_half = bool(descriptor.supports_half)  # type: ignore[assignment]
+        net.nf_supports_bf16 = bool(descriptor.supports_bfloat16)  # type: ignore[assignment]
         return net.eval()
     net = build_network(spec)
     try:

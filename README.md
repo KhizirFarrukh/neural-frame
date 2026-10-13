@@ -8,10 +8,12 @@ the way), and writes a file with the original audio, subtitles and chapters inta
 runs on your own computer; nothing is uploaded anywhere.
 
 * **Upscaling** to 4K by default (or 8K, 1440p, 1080p, 2x/3x/4x, any width x height), aspect ratio kept.
-* **Automatic model choice**: each video is analysed (cartoon or filmed, grain, compression, how much
-  real detail it has) and upscaled with the model that suits it, within the time the preset allows.
-  13 AI upscaling models built in, and any model file from [OpenModelDB](https://openmodeldb.info) can be
-  added with one command.
+* **65 AI upscaling models, chosen by what you have**: filmed video and photos; old, damaged and very
+  low-quality footage (phone and web video, VHS); cartoons and anime; AI images; games; text and comics.
+  Every list says what a model is for, with its name in brackets. **Automatic** analyses each video (cartoon
+  or filmed, grain, compression, real detail) and picks one for you. Models are downloaded only when chosen,
+  with a progress bar; a model manager handles downloads, files you already have and updates, and any
+  model file from [OpenModelDB](https://openmodeldb.info) can be added.
 * **Frame generation** to 60 fps by default (or any rate), with smart repair of dropped and frozen frames
   and no blending across scene cuts.
 * **Fast**: TensorRT FP16 engines, CUDA-stream overlap, NVDEC/NVENC hardware video, a C++ module for
@@ -30,7 +32,8 @@ runs on your own computer; nothing is uploaded anywhere.
 3. [Install from source on Windows](#3-install-from-source-on-windows)
 4. [Install from source on Linux](#4-install-from-source-on-linux)
 5. [Using NeuralFrame](#5-using-neuralframe) - desktop app, command line, web interface, configuration,
-   [models](#55-models-which-one-and-what-to-expect)
+   [models](#55-models-which-one-and-what-to-expect),
+   [getting models](#56-getting-models-downloads-files-you-already-have-updates)
 6. [Build the Windows app yourself](#6-build-the-windows-app-yourself)
 7. [Docker](#7-docker)
 8. [Supported hardware](#8-supported-hardware) - [Performance](#9-performance) -
@@ -64,8 +67,9 @@ second). Other GPUs: see [Supported hardware](#8-supported-hardware).
 ## 2. The Windows app (no programming needed)
 
 The Windows app is a folder containing `NeuralFrame.exe` (the desktop app) together with everything it
-needs: Python, PyTorch, TensorRT, FFmpeg and the AI models. Nothing else has to be installed and it works
-offline.
+needs: Python, PyTorch, TensorRT and FFmpeg. Nothing else has to be installed. The AI models are not
+included: each one is downloaded the first time you choose it (with a progress bar), or ahead of time from
+the app's **Models** window; after that everything works offline.
 
 ### What you need
 
@@ -307,11 +311,13 @@ file: `neuralframe-gui "C:\Videos\clip.mp4"`.
    * **Output size** - *4K* by default; *8K*, *1440p*, *1080p*, *720p*, *2x/3x/4x*, or *Custom...*
      where you type `2560x1440` (exact size), `x1.5` (scale factor) or `1200p` (height). The aspect ratio
      is kept unless you type an exact size.
-   * **Model** - *Automatic (analyses the video)* by default: after you open a file, the line under
-     *Model* shows which model suits it and why (cartoon or filmed, noise, compression, real detail). Pick
-     a model yourself from the list to override it; each entry shows its speed (*fast* to *very-slow*),
-     and hovering shows what it is made for. **Add model...** adds a model file you downloaded. See
-     [5.5](#55-models-which-one-and-what-to-expect).
+   * **Model** - *Automatic* by default: after you open a file, the line under *Model* shows which model
+     suits it and why (cartoon or filmed, noise, compression, real detail). To choose yourself, the list is
+     grouped by content (*Filmed video & photos*, *Old, damaged or very low quality*, *Cartoons & anime*,
+     ...) and each entry says what it is for, how fast it is and its name in brackets. A line below says
+     whether the model is on this computer or still has to be downloaded (**Download now**, or it is
+     downloaded when you press Start). **Models...** opens the model manager. See
+     [5.5](#55-models-which-one-and-what-to-expect) and [5.6](#56-getting-models-downloads-files-you-already-have-updates).
    * **Preset** - *fast*, *balanced* (default) or *quality*: which models automatic choice may use (fast
      ones only / up to slow / also the very slow transformer models), tile overlap and how hard the video
      encoder works.
@@ -375,8 +381,8 @@ neuralframe upscale clip.mp4 -o clip_4k.mkv --resume
 # Information and tools
 neuralframe doctor                       # graphics card, drivers, what will be used
 neuralframe probe clip.mp4 --frames      # what NeuralFrame sees in a file
-neuralframe models list                  # available models: speed, what they are for, licences
-neuralframe models download hat-l-x4     # download ahead of time (otherwise on first use)
+neuralframe models list                  # every model by what it is for, and which are on this computer
+neuralframe models download hat-l-x4     # download ahead of time (otherwise when first used; see 5.6)
 neuralframe models add 4x-Model.pth      # add your own model file (see 5.5)
 neuralframe compare clip.mp4 clip_4k.mkv --frame 120 --crop 1600,800,640,360 --zoom 2   # side-by-side PNG
 neuralframe benchmark -m realesr-animevideov3 -r 480p -t 1080p -n 300   # speed test
@@ -458,6 +464,7 @@ settings:
 | Setting | Default | |
 |---|---|---|
 | `paths.cache_dir` | `%LOCALAPPDATA%\neuralframe` (Windows), `~/.cache/neuralframe` (Linux) | models, optimised engines, temporary files |
+| `paths.model_search_paths` | none | folders with model files you already have (used instead of downloading) |
 | `inference.backend`, `precision` | `auto`, `fp16` | TensorRT on NVIDIA, ONNX Runtime elsewhere |
 | `vram.safety_margin`, `max_vram_gb` | 0.15, none | graphics memory left for other programs |
 | `encode.encoder`, `codec`, `quality` | auto, hevc, per preset | hardware encoder first, software fallback |
@@ -490,28 +497,25 @@ Without an NVIDIA graphics card (CUDA) only the fast models are considered. The 
 app shows the choice and the reasons under *Model*; `neuralframe recommend clip.mp4` prints them (add
 `--preset quality` or `--target 1080p` to see other choices), and every job's `.report.json` records them.
 
-The built-in models (`neuralframe models list` shows them; details and licences in
-[MODEL_CARDS.md](MODEL_CARDS.md)):
+The models are grouped by what they are for. Every list (the desktop app, the web page,
+`neuralframe models list`) shows **what a model is for first and its name in brackets**, for example
+*HD anime to 4K, fastest - fast (2x-animejanai-hd-v3-superultracompact)*: choose by your content if you do
+not know the models, or by name if you do (names work in any spelling: `-m 4x_UltraSharpV2`).
 
-| Model | Scale | Speed | Made for | Also removes |
-|---|---|---|---|---|
-| `hat-l-x4` | 4x | very slow | filmed footage in good condition: the most detail | - |
-| `drct-l-x4` | 4x | very slow | filmed footage in good condition (the largest model) | - |
-| `atd-x4` | 4x | very slow | filmed footage in good condition | - |
-| `dat2-real-x4` | 4x | very slow | real-world filmed footage | noise, compression, blur |
-| `swinir-l-x4` | 4x | very slow | heavily degraded filmed footage | noise, compression, blur |
-| `realplksr-x2` | 2x | medium | filmed footage, 2x jobs such as 1080p -> 4K | light noise, compression, blur |
-| `bsrgan-x4` | 4x | slow | badly degraded filmed footage | noise, compression, blur |
-| `realesrgan-x4plus` | 4x | slow | degraded filmed footage and photos (smooths clean sources) | noise, compression, blur |
-| `realesrgan-x2plus` | 2x | slow | degraded filmed footage at 2x (smooths clean sources) | noise, compression, blur |
-| `realbasicvsr-x4` | 4x | slow | noisy real-world video; uses neighbouring frames (only when chosen by name) | noise, compression, blur |
-| `realesr-general-x4v3` | 4x | fast | filmed and animated footage, the fast all-rounder | mild noise, compression |
-| `realesr-animevideov3` | 4x | fast | cartoons and anime (video) | noise, compression, blur |
-| `realesrgan-x4plus-anime` | 4x | medium | anime pictures and illustrations | noise, compression, blur |
-| `lanczos`, `bicubic` | any | fastest | plain resizing, no AI | - |
+| Group | Examples (name) |
+|---|---|
+| Filmed video & photos | clean video, most detail (`hat-l-x4`); quick all-rounder (`realesr-general-x4v3`); 1080p -> 4K (`realplksr-x2`); everyday photos (`4x-purephoto-span`) |
+| Old, damaged or very low quality | phone, web and social-media video (`4x-realwebphoto-v4-dat2`, strongest: `4x-realwebphoto-v4-drct-l`); VHS tapes (`2x-vhs2hd`); compressed TV and streaming video (`2x-liveactionv1-span`); noise and compression (`dat2-real-x4`, `bsrgan-x4`); tiny clean images in one 8x step (`swinir-m-classical-x8`) |
+| Cartoons & anime | anime video (`realesr-animevideov3`); HD anime to 4K in real time (`2x-animejanai-hd-v3-compact`); sharpest anime lines (`2x-animesharpv4`); DVD-era anime (`2x-aniscale-2-esrgan`); western cartoons (`2x-modernspanimation-v1`); grainy old cel animation (`2x-digitalfilm-v5-lite`) |
+| AI images & digital art | any picture, very sharp (`4x-ultrasharpv2`); Stable Diffusion / Midjourney images (`4x-lexicahat`); invented fine detail (`aurasr-v2`); faces in artwork (`4x-artfaces-realplksr`) |
+| Games, textures & pixel art | old game textures (`4x-pbrify-v4`); pixel art (`8x-ms-unpainter`) |
+| Text, documents & comics | blurry text and screenshots (`2x-text2hd`); printed photos and comics without halftone dots (`4x-dwtp-ds-dat2-v3`); manga (`4x-wtp-uds-esrgan`) |
+| Plain resizing (no AI) | `lanczos`, `bicubic` |
 
-The six newest models (the transformers and `realplksr-x2`, 30-250 MB each) are downloaded the first time
-they are used, also in the Windows app; all others are included.
+All 65 AI upscaling models (plus plain resizing), with sizes, licences and sources, are listed in
+[MODEL_CARDS.md](MODEL_CARDS.md).
+Automatic choice uses the 13 models measured so far (marked with a rank there); the others are chosen by
+you. Models marked **personal use only** have a non-commercial licence.
 
 **What to expect.** No upscaler can bring back detail that was never recorded. The models redraw the
 picture at the higher resolution with detail that looks right - skin, hair, fabric, foliage, clean
@@ -534,17 +538,57 @@ footage, ...) are on [OpenModelDB](https://openmodeldb.info). Any colour image-u
 OmniSR, SPAN, PLKSR, Compact, ...), as a `.pth`, `.safetensors` or `.ckpt` file:
 
 ```bash
-neuralframe models add 4x-MyModel.safetensors --content live-action --handles compression --licence CC0-1.0
+neuralframe models add 4x-MyModel.safetensors --purpose "Old home videos" --content live-action --licence CC0-1.0
 neuralframe upscale clip.mp4 -o clip_4k.mkv -m 4x-mymodel      # the id is printed by models add
 neuralframe models remove 4x-mymodel                           # removes the entry and the copied file
 ```
 
-In the desktop app use **Add model...** next to *Model*. The file is checked (it must be an upscaler of 2x
+In the desktop app use **Models -> Add your own model file...**. The file is checked (it must be an upscaler of 2x
 or more), copied into the model folder and recorded in `models.yaml` in your settings folder
 (`%APPDATA%\neuralframe` on Windows, `~/.config/neuralframe` on Linux). Added models are used when you
 choose them by name; to let automatic choice consider one, give it `--content` and a `--rank` (how good
 it is next to the built-in models, from 1 to 100: `hat-l-x4` is 95, `realesrgan-x4plus` 65; see
 `neuralframe models list --json`). Only add model files from sources you trust.
+
+### 5.6 Getting models: downloads, files you already have, updates
+
+**Nothing is downloaded until you choose a model.** When a job needs a model that is not on this computer
+yet - picked by you or by Automatic - it is downloaded first: the progress bar shows *Downloading the model
+first* with the size done, speed and time left, and **Cancel** stops it (the part already downloaded is
+kept, and the next start continues from there). Downloads are checked against the published checksum
+before use. Models are kept in `%LOCALAPPDATA%\neuralframe\models` (Windows) or
+`~/.cache/neuralframe/models` (Linux).
+
+In the desktop app:
+
+* The line under **Model** says whether the chosen model is ready or still has to be downloaded (with its
+  size), with a **Download now** button.
+* **Models...** (next to the list, or the **Models** menu, Ctrl+M) opens the model manager: every model by
+  group, with a search box (*anime*, *VHS*, *photos*, *2x*, a name...), filters (*on this computer*, *not
+  downloaded*, *updates available*), size and status. Each row has **Download** (a progress bar with
+  details appears in the row, with **Cancel**), **Delete** (to free space), **Use a file I have...** and,
+  when available, **Update**. The bottom shows how much space the models use.
+* **Use a file I have...** - if you already downloaded a model yourself and keep it somewhere, point to it
+  instead of downloading it again. The exact published file is recognised by its checksum; a different
+  version of the same model is accepted only if it loads as that model. The file stays where it is.
+* **Check for updates** asks the models' websites (Hugging Face files and GitHub releases publish
+  checksums) whether a newer file was published; rows with an update get an **Update** button. Models
+  hosted elsewhere cannot be checked.
+
+On the command line:
+
+```bash
+neuralframe models list                       # all models by group, and which are on this computer
+neuralframe models info 4x-ultrasharpv2       # what it is for, licence, source, status
+neuralframe models download hat-l-x4 2x-vhs2hd    # ahead of time, with a progress bar (Ctrl+C keeps the part)
+neuralframe models link hat-l-x4 "D:\models\4xBHI_small_hat-l.safetensors"   # a file you already have
+neuralframe models check-updates              # downloaded models with a newer published file
+neuralframe models update hat-l-x4
+neuralframe models delete hat-l-x4            # free the space (downloaded again when needed)
+```
+
+A whole folder of model files you already have can be used with the setting `paths.model_search_paths`
+(see [5.4](#54-configuration)): files are found by their published file name and checked by checksum.
 
 ---
 
@@ -577,13 +621,15 @@ The script:
    PyInstaller);
 2. packages the app with PyInstaller into one folder with `NeuralFrame.exe` (desktop app) and
    `neuralframe-cli.exe` (command line);
-3. downloads FFmpeg 9 (checksum-verified) into it and copies the AI models into it, so it works offline
-   (the six newest, largest models are not included: they download the first time someone uses them);
+3. downloads FFmpeg 9 (checksum-verified) into it; no AI models are included unless you add
+   `--with-models` (users download the models they choose from the app);
 4. removes files only needed for building (about 0.9 GB);
 5. **tests the result the way a user runs it**: from a fresh, empty data folder and with nothing from your
-   development setup available, it runs a simple upscale, an upscale with TensorRT (building the engine
+   development setup on the PATH, it runs a simple upscale, an upscale with TensorRT (building the engine
    inside the package), an upscale with a model loaded through spandrel, the automatic model choice, frame
-   generation, and starts the desktop app; the build stops with an error if any of this fails;
+   generation, lists the models, and starts the desktop app (including its Models window); the build stops
+   with an error if any of this fails. It downloads nothing: model files already on your computer are used
+   read-only, and checks whose model you do not have are skipped and listed;
 6. creates the zip and `SHA256SUMS.txt`.
 
 ### What you get (in `build\release\`)
@@ -610,7 +656,7 @@ TensorRT (`--no-tensorrt`, about 2 GB smaller, NVIDIA cards run 1.3-2.6x slower)
 | `--no-tensorrt` | leave TensorRT out (smaller; the app then uses PyTorch on NVIDIA cards) |
 | `--trt-archs all` | keep TensorRT support for datacenter GPUs too (A100/H100/B200, +0.9 GB) |
 | `--with-onnxruntime` | also include ONNX Runtime (not needed on NVIDIA) |
-| `--no-models` | do not include the models (downloaded on first use instead; needs internet) |
+| `--with-models` | include the 8 models marked `bundled` in the registry (about 0.4 GB, downloaded first if needed) so they work offline from the first start; by default no models are included |
 | `--skip-tests` | skip the self-test (not recommended) |
 | `--out FOLDER` | write somewhere other than `build\release` |
 

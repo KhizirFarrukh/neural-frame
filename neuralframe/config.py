@@ -65,6 +65,8 @@ class _Section(BaseModel):
 class PathsConfig(_Section):
     cache_dir: Path = Field(default_factory=default_cache_dir)
     models_dir: Path | None = None
+    model_search_paths: list[Path] = Field(default_factory=list)
+    """Extra folders with model files you already have (looked up by file name, checked by SHA256)."""
     engines_dir: Path | None = None
     work_dir: Path | None = None
     db_path: Path | None = None

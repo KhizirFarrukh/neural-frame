@@ -67,6 +67,7 @@ def add_user_model(
     content: list[str] | None = None,
     handles: list[str] | None = None,
     rank: int = 0,
+    purpose: str | None = None,
 ) -> ModelSpec:
     """Validate ``file``, copy it into ``models_dir/<id>/`` and register it. Returns the new model.
 
@@ -113,6 +114,7 @@ def add_user_model(
         handles=[h for h in (handles or []) if h in ("noise", "compression", "blur")],
         speed=_speed(arch, params),
         rank=rank,
+        purpose=(purpose or "").strip()[:80],
         backends=["torch"],
         fp16=bool(descriptor.supports_half),
         memory_per_pixel=16000 if arch in TRANSFORMERS else 4000,

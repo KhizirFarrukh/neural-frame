@@ -12,6 +12,9 @@ paths:
   # ~/.cache/neuralframe (Linux), ~/Library/Caches/neuralframe (macOS).
   # cache_dir: /data/neuralframe
   models_dir: null      # downloaded weights + exported ONNX      (default: <cache_dir>/models)
+  # Folders with model files you already have: used instead of downloading (found by the published file
+  # name, checked by SHA256). Example: ["D:/models", "//nas/share/upscaling-models"]
+  model_search_paths: []
   engines_dir: null     # TensorRT engines and timing caches       (default: <cache_dir>/engines)
   work_dir: null        # per-job chunk stores used for resume     (default: <cache_dir>/work)
   db_path: null         # SQLite job queue for the API / GUI       (default: <cache_dir>/jobs.db)

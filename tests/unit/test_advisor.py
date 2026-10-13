@@ -188,8 +188,8 @@ def test_builtin_models_are_annotated_for_automatic_choice() -> None:
         if m.architecture == "spandrel":
             assert m.backends == ["torch"] and m.allows("torch") and not m.allows("tensorrt"), m.id
             assert m.memory_per_pixel, m.id
-        if not m.fp16:
-            assert m.speed == "very-slow", m.id  # transformers that overflow in FP16 run in bfloat16
+        if not m.fp16 and m.rank > 0:
+            assert m.speed == "very-slow", m.id  # the ranked transformers overflow in FP16 (bfloat16 instead)
     assert all(m.content for m in ranked if m.speed == "fast")  # CPU fallback always has something
     assert {"live-action", "animation"} <= {c for m in ranked if m.speed == "fast" for c in m.content}
 

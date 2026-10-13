@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import threading
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -19,6 +20,8 @@ from neuralframe.core.job import JobPlan, JobRunner, JobSpec, ProgressEvent
 from neuralframe.core.planning import TargetSpec
 from neuralframe.errors import ErrorCode, JobCancelled, NeuralFrameError
 from neuralframe.log import configure_logging
+from neuralframe.models.library import ModelLibrary
+from neuralframe.models.registry import SPEED_WORDS, ModelRegistry
 
 app = typer.Typer(
     name="neuralframe",
@@ -425,24 +428,40 @@ def _run_job(state: AppState, spec: JobSpec) -> None:
 
 
 @models_app.command("list")
-def models_list(as_json: bool = typer.Option(False, "--json")) -> None:
-    """List registered models."""
-    from neuralframe.models.registry import ModelRegistry
-
+def models_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--json")) -> None:
+    """List the models, grouped by what they are for."""
     registry = ModelRegistry.load()
     if as_json:
-        out.print_json(json.dumps([m.model_dump(mode="json") for m in registry.all()]))
+        out.print_json(json.dumps([{**m.model_dump(mode="json"), "label": m.label,
+                                    "category_title": m.category_title} for m in registry.all()]))
         return
-    table = Table(title="Models (-m auto picks one for each video)", title_justify="left")
-    for col in ("id", "scale", "speed", "for", "removes", "licence"):
-        table.add_column(col, no_wrap=col == "id")
-    for m in registry.all():
-        name = m.id + (" [cyan](added)[/]" if m.origin == "user" else "")
-        kind = m.kind if m.kind != "sr" else ", ".join(m.content) or "-"
-        table.add_row(name, f"x{m.scale}", m.speed or "-", kind, ", ".join(m.handles) or "-", m.licence)
+    table = Table(title="Models - use the name in brackets with -m (or -m auto: picked for each video)",
+                  title_justify="left", show_lines=False)
+    table.add_column("use it for")
+    table.add_column("-m", no_wrap=True, style="cyan")
+    table.add_column("scale", no_wrap=True)
+    table.add_column("speed", no_wrap=True)
+    table.add_column("licence")
+    table.add_column("on this computer")
+    library = ModelLibrary.from_settings(_state(ctx).settings)
+    for title, models in registry.grouped():
+        table.add_section()
+        table.add_row(f"[bold]{title}[/]", "", "", "", "", "")
+        for m in models:
+            licence = m.licence + (" [yellow](personal use only)[/]" if m.licence_restricted else "")
+            name = m.id + (" (added)" if m.origin == "user" else "")
+            status = library.status(m)
+            here = {"builtin": "built in", "missing": "-", "installed": "[green]yes[/]", "bundled": "[green]yes[/]",
+                    "found": "[green]yes[/] (found)", "linked": "[green]your file[/]",
+                    "linked-different": "[green]your file[/]"}[status.state]
+            if status.state == "missing" and status.size_bytes:
+                here = f"- ({status.size_bytes / 1e6:.0f} MB)"
+            table.add_row(f"  {m.purpose or m.label}", name, f"x{m.scale}", SPEED_WORDS.get(m.speed or "", "-"),
+                          licence, here)
     console.print(table)
-    console.print("[dim]Details: MODEL_CARDS.md, or `neuralframe models list --json`. Add your own model file with "
-                  "`neuralframe models add FILE`.[/]")
+    console.print("[dim]Models are downloaded when first used (or `neuralframe models download NAME`). More: "
+                  "`neuralframe models info NAME`, `models link NAME FILE` (a file you have), `models check-updates`, "
+                  "`models add FILE` (your own model).[/]")
 
 
 @models_app.command("add")
@@ -456,6 +475,8 @@ def models_add(
                                       "(repeatable)."),
     handles: list[str] = typer.Option([], "--handles", help="What it removes: noise, compression, blur "
                                       "(repeatable)."),
+    purpose: str | None = typer.Option(None, "--purpose", help="What it is for, in plain words (shown in model "
+                                       "lists), e.g. \"Old cartoons from VHS\"."),
     rank: int = typer.Option(0, "--rank", min=0, max=100, help="Let automatic choice use it (with --content): "
                              "how good it is next to the built-in models, e.g. hat-l-x4 95, realesrgan-x4plus 65 "
                              "(see `models list --json`). 0 = only when chosen with -m."),
@@ -466,11 +487,11 @@ def models_add(
     settings = _state(ctx).settings
     try:
         spec = add_user_model(file, settings.paths.models(), model_id=model_id, description=description,
-                              licence=licence, content=content, handles=handles, rank=rank)
+                              licence=licence, content=content, handles=handles, rank=rank, purpose=purpose)
     except NeuralFrameError as exc:
         _fail(exc)
         return
-    console.print(f"[green]added[/] {spec.id}: {spec.description} (speed: {spec.speed})")
+    console.print(f"[green]added[/] {spec.label}: {spec.description}")
     console.print(f"use it with: neuralframe upscale INPUT -o OUTPUT -m {spec.id}")
     out.print(spec.id)
 
@@ -492,58 +513,216 @@ def models_remove(
     console.print(f"removed {model_id}")
 
 
+def _download_with_bar(library: Any, spec: Any, *, update: bool = False) -> Path:
+    """Download (or update) one model with a progress bar; Ctrl+C stops it and keeps the part done."""
+    from rich.progress import DownloadColumn, TimeRemainingColumn, TransferSpeedColumn
+
+    from neuralframe.models.library import DownloadProgress
+
+    with Progress(TextColumn(f"{spec.id}"), BarColumn(), DownloadColumn(), TransferSpeedColumn(),
+                  TimeRemainingColumn(), console=console) as bar:
+        task = bar.add_task("download", total=spec.weights.size_bytes if spec.weights else None)
+
+        def on_progress(event: DownloadProgress) -> None:
+            bar.update(task, completed=event.done, total=event.total)
+
+        cancel = threading.Event()
+        try:
+            if update:
+                return Path(library.apply_update(spec, progress=on_progress, cancel=cancel))
+            return Path(library.ensure(spec, progress=on_progress, cancel=cancel))
+        except KeyboardInterrupt:
+            cancel.set()
+            raise
+
+
 @models_app.command("download")
 def models_download(
     ctx: typer.Context,
-    model_ids: list[str] = typer.Argument(None, help="Model ids (default: all neural models)."),
+    model_ids: list[str] = typer.Argument(None, help="Models to download (names from `neuralframe models list`)."),
+    every: bool = typer.Option(False, "--all", help="Download every model (several GB)."),
 ) -> None:
-    """Download and SHA256-verify model weights into the cache."""
-    from rich.progress import DownloadColumn, TransferSpeedColumn
-
-    from neuralframe.models.download import ensure_weights
-    from neuralframe.models.registry import ModelRegistry
-
+    """Download models ahead of time (otherwise each one is downloaded when it is first used)."""
     settings = _state(ctx).settings
     registry = ModelRegistry.load()
-    specs = [registry.get(m) for m in model_ids] if model_ids else [m for m in registry.all() if m.weights]
+    library = ModelLibrary.from_settings(settings)
+    if not model_ids and not every:
+        missing = [m for m in registry.all() if m.weights and not library.is_ready(m)]
+        total = sum((m.weights.size_bytes or 0) for m in missing if m.weights)
+        _fail(NeuralFrameError(ErrorCode.INVALID_INPUT, "name the models to download",
+                               hint=f"e.g. `neuralframe models download hat-l-x4`; `--all` downloads all "
+                               f"{len(missing)} missing models ({total / 1e9:.1f} GB)"))
+        return
+    try:
+        specs = [registry.get(m) for m in model_ids] if model_ids else [m for m in registry.all() if m.weights]
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
     for spec in specs:
         if spec.weights is None:
-            console.print(f"{spec.id}: classical model, nothing to download")
+            console.print(f"{spec.id}: plain resizing, nothing to download")
             continue
-        with Progress(TextColumn(spec.id), BarColumn(), DownloadColumn(), TransferSpeedColumn(),
-                      console=console) as bar:
-            task = bar.add_task("dl", total=spec.weights.size_bytes)
-
-            def update(done: int, total: int | None, _task: Any = task, _bar: Progress = bar) -> None:
-                _bar.update(_task, completed=done, total=total)
-
-            try:
-                path = ensure_weights(spec, settings.paths.models(), progress=update)
-            except NeuralFrameError as exc:
-                _fail(exc)
-                return
+        if library.is_ready(spec):
+            console.print(f"[dim]{spec.id}: already on this computer[/]")
+            continue
+        if spec.licence_restricted:
+            console.print(f"[yellow]{spec.id}: licence {spec.licence} - personal, non-commercial use only[/]")
+        try:
+            path = _download_with_bar(library, spec)
+        except KeyboardInterrupt:
+            console.print(f"[yellow]stopped[/] {spec.id}: the part already downloaded is kept; run the command again "
+                          "to continue")
+            raise typer.Exit(130) from None
+        except NeuralFrameError as exc:
+            _fail(exc)
+            return
         console.print(f"[green]ok[/] {spec.id} -> {path} ({spec.licence})")
+
+
+@models_app.command("delete")
+def models_delete(
+    ctx: typer.Context,
+    model_ids: list[str] = typer.Argument(..., help="Models whose downloaded files to delete."),
+) -> None:
+    """Delete downloaded model files to free disk space (they are downloaded again when needed)."""
+    library = ModelLibrary.from_settings(_state(ctx).settings)
+    registry = ModelRegistry.load()
+    try:
+        for mid in model_ids:
+            freed = library.delete(registry.get(mid))
+            console.print(f"{mid}: " + (f"deleted ({freed / 1e6:.0f} MB freed)" if freed else "nothing downloaded"))
+    except NeuralFrameError as exc:
+        _fail(exc)
+
+
+@models_app.command("link")
+def models_link(
+    ctx: typer.Context,
+    model_id: str = typer.Argument(..., help="Model the file belongs to."),
+    file: Path = typer.Argument(..., exists=True, dir_okay=False, help="The model file you already have."),
+) -> None:
+    """Use a model file you already have (no download). The file stays where it is."""
+    library = ModelLibrary.from_settings(_state(ctx).settings)
+    try:
+        status = library.link(ModelRegistry.load().get(model_id), file)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    if status.state == "linked-different":
+        console.print("[yellow]note[/] the file differs from the published one but loads as this model; it will "
+                      "be used")
+    console.print(f"[green]ok[/] {model_id}: {status.text()}")
+
+
+@models_app.command("unlink")
+def models_unlink(ctx: typer.Context, model_id: str = typer.Argument(...)) -> None:
+    """Stop using a file linked with `models link` (the file itself is not touched)."""
+    try:
+        ModelLibrary.from_settings(_state(ctx).settings).unlink(ModelRegistry.load().get(model_id))
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    console.print(f"{model_id}: no longer uses your file")
+
+
+@models_app.command("check-updates")
+def models_check_updates(
+    ctx: typer.Context,
+    model_ids: list[str] = typer.Argument(None, help="Models to check (default: every downloaded model)."),
+) -> None:
+    """Ask the models' websites (Hugging Face, GitHub releases) whether newer files were published."""
+    library = ModelLibrary.from_settings(_state(ctx).settings)
+    registry = ModelRegistry.load()
+    try:
+        specs = [registry.get(m) for m in model_ids] if model_ids else [
+            m for m in registry.all() if m.weights and library.status(m).state == "installed"]
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    found = 0
+    for spec in specs:
+        if library.update_source(spec) is None:
+            console.print(f"[dim]{spec.id}: its website does not publish version information[/]")
+            continue
+        try:
+            info = library.check_update(spec, force=True)
+        except NeuralFrameError as exc:
+            console.print(f"[red]{spec.id}: {exc.message}[/]")
+            continue
+        if info is not None and info.available:
+            found += 1
+            size = f" ({info.size_bytes / 1e6:.0f} MB)" if info.size_bytes else ""
+            console.print(f"[green]{spec.id}: update available{size}[/] - `neuralframe models update {spec.id}`")
+        else:
+            console.print(f"{spec.id}: up to date" + (f" ({info.note})" if info and info.note else ""))
+    if not specs:
+        console.print("No downloaded models to check.")
+    out.print(found)
+
+
+@models_app.command("update")
+def models_update(
+    ctx: typer.Context,
+    model_ids: list[str] = typer.Argument(..., help="Models to update (see `models check-updates`)."),
+) -> None:
+    """Download the newer published file of a model and use it from now on."""
+    library = ModelLibrary.from_settings(_state(ctx).settings)
+    registry = ModelRegistry.load()
+    for mid in model_ids:
+        try:
+            spec = registry.get(mid)
+            path = _download_with_bar(library, spec, update=True)
+        except KeyboardInterrupt:
+            console.print(f"[yellow]stopped[/] {mid}: run the command again to continue")
+            raise typer.Exit(130) from None
+        except NeuralFrameError as exc:
+            _fail(exc)
+            return
+        console.print(f"[green]updated[/] {mid} -> {path}")
+
+
+@models_app.command("info")
+def models_info(ctx: typer.Context, model_id: str = typer.Argument(...)) -> None:
+    """Everything about one model: what it is for, licence, source, whether it is on this computer."""
+    library = ModelLibrary.from_settings(_state(ctx).settings)
+    try:
+        spec = ModelRegistry.load().get(model_id)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    status = library.status(spec)
+    table = Table(show_header=False, box=None, padding=(0, 1))
+    rows = [("use it for", spec.purpose or "-"), ("name", spec.id), ("group", spec.category_title),
+            ("about", spec.description), ("scale", f"x{spec.scale}"), ("speed", spec.speed or "-"),
+            ("removes", ", ".join(spec.handles) or "-"),
+            ("licence", spec.licence + (" (personal use only)" if spec.licence_restricted else "")),
+            ("source", spec.source_url or "-"), ("status", status.text())]
+    if spec.weights is not None:
+        rows.append(("file", spec.weights.filename))
+        rows.append(("updates", "checked on its website" if library.update_source(spec) else "not available"))
+    for key, value in rows:
+        table.add_row(f"[bold]{key}[/]", value)
+    console.print(table)
 
 
 @models_app.command("verify")
 def models_verify(ctx: typer.Context) -> None:
-    """Check SHA256 of every downloaded weight file."""
-    from neuralframe.models.download import verify_weights, weights_path
-    from neuralframe.models.registry import ModelRegistry
-
-    settings = _state(ctx).settings
+    """Check the SHA256 of every model file on this computer."""
+    library = ModelLibrary.from_settings(_state(ctx).settings)
     bad = 0
     for spec in ModelRegistry.load().all():
         if spec.weights is None:
             continue
-        path = weights_path(spec, settings.paths.models())
-        if not path.is_file():
-            console.print(f"[dim]{spec.id}: not downloaded[/]")
-        elif verify_weights(spec, settings.paths.models()):
-            console.print(f"[green]{spec.id}: ok[/]")
-        else:
+        quick, _ = library.locate(spec, quick=True)
+        if quick == "missing":
+            continue
+        state, path = library.locate(spec)
+        if state == "missing":
             bad += 1
-            console.print(f"[red]{spec.id}: SHA256 mismatch[/] ({path})")
+            console.print(f"[red]{spec.id}: the file is damaged or not the published one[/] - "
+                          f"`neuralframe models delete {spec.id}` and download it again")
+        else:
+            console.print(f"[green]{spec.id}: ok[/] ({path})")
     if bad:
         raise typer.Exit(1)
 
@@ -561,9 +740,7 @@ def models_export(
 
     from neuralframe.inference.backend import ShapeProfile
     from neuralframe.inference.factory import create_backend
-    from neuralframe.models.download import ensure_weights
     from neuralframe.models.export import compare_outputs, export_onnx, onnx_path, sample_tiles
-    from neuralframe.models.registry import ModelRegistry
 
     settings = _state(ctx).settings
     try:
@@ -571,7 +748,9 @@ def models_export(
         if not spec.allows("onnxruntime"):
             raise NeuralFrameError(ErrorCode.BACKEND_UNAVAILABLE,
                                    f"{model_id} runs on PyTorch only; ONNX/TensorRT export is not validated for it")
-        weights = ensure_weights(spec, settings.paths.models())
+        library = ModelLibrary.from_settings(settings)
+        spec = library.effective_spec(spec)
+        weights = _download_with_bar(library, spec)
         path = export_onnx(spec, weights, onnx_path(spec, settings.paths.models()))
     except NeuralFrameError as exc:
         _fail(exc)

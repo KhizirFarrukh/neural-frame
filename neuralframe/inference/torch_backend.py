@@ -35,7 +35,10 @@ class TorchBackend(InferenceBackend):
             # The architecture overflows in FP16 (spandrel says so): fall back instead of producing NaNs.
             from neuralframe.inference.factory import bf16_supported
 
-            self.precision = "bf16" if bf16_supported(self.device) else "fp32"
+            bf16_ok = getattr(net, "nf_supports_bf16", True) is not False
+            self.precision = "bf16" if bf16_ok and bf16_supported(self.device) else "fp32"
+        if self.dtype == torch.bfloat16 and getattr(net, "nf_supports_bf16", True) is False:
+            self.precision = "fp32"
         if self.dtype in (torch.float16, torch.bfloat16):
             net = net.to(self.dtype)
         self._net = net

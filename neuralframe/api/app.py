@@ -137,16 +137,24 @@ def create_app(settings: Settings, *, manager: JobManager | None = None, start_w
 
     @app.get("/v1/models")
     def models() -> list[dict[str, Any]]:
-        from neuralframe.models.registry import ModelRegistry
+        from neuralframe.models.library import ModelLibrary
+        from neuralframe.models.registry import CATEGORY_TITLES, ModelRegistry
 
+        library = ModelLibrary.from_settings(settings)
         engines_dir = settings.paths.engines()
         engines = sorted(engines_dir.glob("*.engine")) if engines_dir.is_dir() else []
         result = []
         for m in ModelRegistry.load().all():
-            present = m.weights is None or (settings.paths.models() / m.id / m.weights.filename).is_file()
+            status = library.status(m)
+            present = status.ready
             result.append({
                 **m.model_dump(mode="json"),
+                "label": m.label,
+                "category_title": m.category_title if m.kind != "interpolation" else "Frame generation",
+                "category_order": list(CATEGORY_TITLES).index(m.category) if m.category else len(CATEGORY_TITLES),
                 "weights_present": present,
+                "status": status.state,
+                "status_text": status.text(),
                 "engines": [e.name for e in engines if e.name.startswith(f"{m.id}-")],
             })
         return result

@@ -123,3 +123,42 @@ def test_add_use_and_remove_your_own_model(tools: FFmpegTools, config: Path, cli
     assert invoke("-c", config, "models", "remove", "cli-tiny").exit_code == 0
     listed = {m["id"] for m in json.loads(invoke("-c", config, "models", "list", "--json").stdout)}
     assert "cli-tiny" not in listed
+
+
+def test_model_library_commands(config: Path, tmp_path: Path, user_config: Path) -> None:
+    """download / info / delete / link / check-updates for a model published as a local file (no network)."""
+    import hashlib
+
+    import yaml
+
+    published = tmp_path / "published" / "2x-Test.pth"
+    published.parent.mkdir()
+    published.write_bytes(b"test model bytes" * 50_000)
+    sha = hashlib.sha256(published.read_bytes()).hexdigest()
+    (user_config / "models.yaml").write_text(yaml.safe_dump({"models": [{
+        "id": "cli-remote", "kind": "sr", "scale": 2, "architecture": "spandrel", "purpose": "CLI test model",
+        "weights": {"url": published.as_uri(), "sha256": sha, "filename": "2x-Test.pth",
+                    "size_bytes": published.stat().st_size}}]}), encoding="utf-8")
+    models_dir = tmp_path / "models"
+    config.write_text(config.read_text(encoding="utf-8").replace(
+        "paths:\n", f"paths:\n  models_dir: '{models_dir.as_posix()}'\n", 1), encoding="utf-8")
+
+    nothing = invoke("-c", config, "models", "download")
+    assert nothing.exit_code != 0 and "name the models" in nothing.output
+    got = invoke("-c", config, "models", "download", "CLI_Remote")  # names as people type them
+    assert got.exit_code == 0, got.output
+    assert (models_dir / "cli-remote" / "2x-Test.pth").read_bytes() == published.read_bytes()
+    info = invoke("-c", config, "models", "info", "cli-remote")
+    assert info.exit_code == 0 and "Downloaded" in info.output and "not available" in info.output
+    listed = {m["id"]: m for m in json.loads(invoke("-c", config, "models", "list", "--json").stdout)}
+    assert listed["cli-remote"]["label"] == "CLI test model (cli-remote)"
+    assert invoke("-c", config, "models", "verify").exit_code == 0
+    updates = invoke("-c", config, "models", "check-updates", "cli-remote")
+    assert updates.exit_code == 0 and "does not publish version information" in updates.output
+
+    deleted = invoke("-c", config, "models", "delete", "cli-remote")
+    assert deleted.exit_code == 0 and "MB freed" in deleted.output
+    assert not (models_dir / "cli-remote").exists()
+    linked = invoke("-c", config, "models", "link", "cli-remote", published)
+    assert linked.exit_code == 0 and "Using your file" in linked.output
+    assert invoke("-c", config, "models", "unlink", "cli-remote").exit_code == 0

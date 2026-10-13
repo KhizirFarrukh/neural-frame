@@ -105,6 +105,15 @@ block matrix multiplies (4.8x faster than dense matrices with identical output).
   (`backends: [torch]` in the registry); models that overflow in FP16 (`fp16: false`) run in BF16 where the
   GPU supports it natively and FP32 otherwise. A planning estimate of activation memory per input pixel
   (`memory_per_pixel`) sizes their tiles before the VRAM calibration refines it.
+* **Model library** (`models/library.py`): nothing is downloaded up front. A model's file is looked up as
+  a linked file of the user's, a download in the models folder, a file bundled with the app, or a file in
+  `paths.model_search_paths`; otherwise jobs download it first (state `downloading`, with bytes, speed and
+  time left; the job's cancel token stops it and the `.part` file is resumed later with an HTTP range
+  request). Checksums are cached per (path, size, mtime) so large files are hashed once; status displays
+  never hash. Updates compare the SHA256 that Hugging Face and GitHub publish for the pinned file; an
+  installed update or a linked different version replaces the weights in the job's model spec, so engine
+  caches and resume keys follow the real file. Spandrel-built networks are wrapped in a size guard that
+  pads to the multiple / minimum / square size the network needs and crops the output.
 * **Automatic model choice** (`models/advisor.py`): eight frames spread over the input are measured on
   the CPU - noise (Immerkaer's estimator on the flatter half of the frame), 8x8 blocking (strongest grid
   phase vs the median of all eight, so crops do not hide it), bits per pixel against a per-codec

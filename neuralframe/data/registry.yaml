@@ -14,13 +14,20 @@
 # speed:        fast | medium | slow | very-slow (relative; transformers are an order of magnitude slower)
 # rank:         relative output quality for its content (higher = better); calibrated with
 #               benchmarks/quality.py where measured
-# Other fields: backends (allowed inference backends), fp16 (false = bfloat16/FP32), memory_per_pixel
-# (planning estimate, bytes per input pixel at 16-bit), bundled (shipped inside the Windows app).
+# Shown to people: purpose (what it is for, in plain words; lists show "purpose - speed (id)") and
+# category (group in the lists: filmed, damaged, animation, ai-art, games, text, classical).
+# Other fields: backends (allowed inference backends), fp16 / bf16 (false = the network overflows or
+# fails in that precision), memory_per_pixel (planning estimate, bytes per input pixel at 16-bit),
+# bundled (included in a Windows build made with --with-models; otherwise downloaded when first chosen),
+# licence_restricted (non-commercial licence: shown as "personal use only"), max_tile (largest input
+# patch the network was trained for).
 
 models:
   # ---- classical ------------------------------------------------------------------------------------
   - id: lanczos
     kind: classical
+    purpose: Plain resize, sharp edges
+    category: classical
     scale: 1
     resize_kernel: lanczos3
     description: Lanczos-3 resampling only (no neural network). Baseline and "no-op" upscale.
@@ -30,6 +37,8 @@ models:
 
   - id: bicubic
     kind: classical
+    purpose: Plain resize, soft
+    category: classical
     scale: 1
     resize_kernel: bicubic
     description: Bicubic (Catmull-Rom) resampling only. Quality-evaluation baseline.
@@ -40,6 +49,8 @@ models:
   # ---- fast and general -------------------------------------------------------------------------------
   - id: realesr-general-x4v3
     kind: sr
+    purpose: Any video, quick all-rounder
+    category: filmed
     scale: 4
     architecture: srvgg
     params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_conv: 32, upscale: 4, act_type: prelu}
@@ -63,6 +74,8 @@ models:
 
   - id: realesr-animevideov3
     kind: sr
+    purpose: Cartoons & anime video
+    category: animation
     scale: 4
     architecture: srvgg
     params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_conv: 16, upscale: 4, act_type: prelu}
@@ -86,6 +99,8 @@ models:
   # ---- CNN (ESRGAN family, PLKSR) -------------------------------------------------------------------------
   - id: realesrgan-x4plus
     kind: sr
+    purpose: Damaged filmed footage & photos
+    category: damaged
     scale: 4
     architecture: rrdbnet
     params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 23, num_grow_ch: 32, scale: 4}
@@ -110,6 +125,8 @@ models:
 
   - id: realesrgan-x2plus
     kind: sr
+    purpose: Damaged filmed footage & photos (2x)
+    category: damaged
     scale: 2
     architecture: rrdbnet
     params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 23, num_grow_ch: 32, scale: 2}
@@ -133,6 +150,8 @@ models:
 
   - id: realesrgan-x4plus-anime
     kind: sr
+    purpose: Anime pictures & illustrations
+    category: animation
     scale: 4
     architecture: rrdbnet
     params: {num_in_ch: 3, num_out_ch: 3, num_feat: 64, num_block: 6, num_grow_ch: 32, scale: 4}
@@ -157,6 +176,8 @@ models:
 
   - id: bsrgan-x4
     kind: sr
+    purpose: Badly degraded, blurry or noisy footage
+    category: damaged
     scale: 4
     architecture: spandrel
     description: >-
@@ -180,6 +201,8 @@ models:
 
   - id: realplksr-x2
     kind: sr
+    purpose: Good-quality video to 2x, e.g. 1080p to 4K
+    category: filmed
     scale: 2
     architecture: spandrel
     description: >-
@@ -205,6 +228,8 @@ models:
   # ---- transformers: the highest quality, an order of magnitude slower ----------------------------------
   - id: dat2-real-x4
     kind: sr
+    purpose: Real-world footage with noise & compression, best repair
+    category: damaged
     scale: 4
     architecture: spandrel
     description: >-
@@ -230,6 +255,8 @@ models:
 
   - id: swinir-l-x4
     kind: sr
+    purpose: Heavily degraded footage, strong repair
+    category: damaged
     scale: 4
     architecture: spandrel
     description: >-
@@ -255,6 +282,8 @@ models:
 
   - id: hat-l-x4
     kind: sr
+    purpose: Clean filmed video & photos, most detail
+    category: filmed
     scale: 4
     architecture: spandrel
     description: >-
@@ -280,6 +309,8 @@ models:
 
   - id: drct-l-x4
     kind: sr
+    purpose: Clean filmed video & photos, largest model
+    category: filmed
     scale: 4
     architecture: spandrel
     description: >-
@@ -306,6 +337,8 @@ models:
 
   - id: atd-x4
     kind: sr
+    purpose: Clean filmed video & photos, high detail
+    category: filmed
     scale: 4
     architecture: spandrel
     description: >-
@@ -332,6 +365,8 @@ models:
   # ---- temporal -------------------------------------------------------------------------------------------
   - id: realbasicvsr-x4
     kind: sr
+    purpose: Noisy real-world video, steady between frames
+    category: damaged
     scale: 4
     input: recurrent
     window: 9
@@ -361,6 +396,7 @@ models:
   # ---- frame interpolation --------------------------------------------------------------------------------
   - id: rife-4.22
     kind: interpolation
+    purpose: "Smoother motion: generates in-between frames"
     scale: 1
     architecture: rife
     params: {scale: 1.0}
@@ -379,3 +415,1269 @@ models:
       sha256: 549df85a6e5b55c4488864b21d4c9b35f415070bbb62c22c3cb6bf788c3d4af5
       filename: flownet_v4.22.pkl
       size_bytes: 40971191
+
+  # ---- community models (OpenModelDB / Hugging Face): chosen by purpose, downloaded when first used.
+  # rank 0 = not used by automatic choice until measured. ------------------------------------------
+  - id: 4x-nomos2-hq-dat2
+    kind: sr
+    purpose: "Clean photos & video, very high detail"
+    category: filmed
+    scale: 4
+    architecture: spandrel
+    description: "4xNomos2_hq_dat2 by helaman (DAT)."
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Nomos2-hq-dat2
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomos2_hq_dat2/4xNomos2_hq_dat2.pth
+      sha256: 1f2be2b4786b5031776aed90e1818564f5576ab1e44da9355c7f3788ea25bdea
+      filename: "4xNomos2_hq_dat2.pth"
+      size_bytes: 140196334
+
+  - id: 4x-nomos2-hq-mosr
+    kind: sr
+    purpose: "Clean photos & video"
+    category: filmed
+    scale: 4
+    architecture: spandrel
+    description: "4xNomos2_hq_mosr by helaman (MoSR)."
+    content: [live-action]
+    handles: []
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Nomos2-hq-mosr
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomos2_hq_mosr/4xNomos2_hq_mosr.pth
+      sha256: c60dbfc7e6f7d27e03517d1bec3f3cbd16e8cd4288eefd1358952f73f8497ddc
+      filename: "4xNomos2_hq_mosr.pth"
+      size_bytes: 17213494
+
+  - id: 4x-lsdir
+    kind: sr
+    purpose: "Clean photos, natural look"
+    category: filmed
+    scale: 4
+    architecture: spandrel
+    description: "4xLSDIR by helaman (ESRGAN). No restoration: keeps the picture as it is."
+    content: [live-action]
+    handles: []
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-LSDIR
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/4xLSDIR/4xLSDIR.pth
+      sha256: 2a743089e6395091b0073c15b4392c3c658ee32841ba770c15c27d92426e5901
+      filename: "4xLSDIR.pth"
+      size_bytes: 67020037
+
+  - id: 4x-purephoto-span
+    kind: sr
+    purpose: "Everyday photos (people, pets, events)"
+    category: filmed
+    scale: 4
+    architecture: spandrel
+    description: "PurePhoto span by asterixcool (SPAN)."
+    content: [live-action]
+    handles: []
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-PurePhoto-span
+    licence: CC-BY-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-sa/4.0/
+    weights:
+      url: https://github.com/starinspace/StarinspaceUpscale/releases/download/Models/4xPurePhoto-span.pth
+      sha256: c689eec59771ed3eaffc10eea933c44fdb9131f83251c51c5bab4cae7c4d3bf2
+      filename: "4xPurePhoto-span.pth"
+      size_bytes: 9016490
+
+  - id: 4x-purephoto-realplksr
+    kind: sr
+    purpose: "Everyday photos (people, pets, events), more detail"
+    category: filmed
+    scale: 4
+    architecture: spandrel
+    description: "4xPurePhoto-RealPLSKR by asterixcool (PLKSR)."
+    content: [live-action]
+    handles: [compression]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-PurePhoto-RealPLSKR
+    licence: CC-BY-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-sa/4.0/
+    weights:
+      url: https://github.com/starinspace/StarinspaceUpscale/releases/download/Models/4xPurePhoto-RealPLSKR.pth
+      sha256: 5913af168a6a1d38d216c91eb60f475d27eeebbd57ff8ed8943fdc7a84d1b250
+      filename: "4xPurePhoto-RealPLSKR.pth"
+      size_bytes: 29663426
+
+  - id: 4x-realwebphoto-v4-dat2
+    kind: sr
+    purpose: "Low-quality web, phone & social-media photos and video"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xRealWebPhoto_v4_dat2 by helaman (DAT). Trained on lens blur, realistic noise, JPEG/WebP compression and several downscaling methods: suited to small, blurry, re-compressed sources."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-RealWebPhoto-v4-dat2
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xRealWebPhoto_v4_dat2/4xRealWebPhoto_v4_dat2.pth
+      sha256: 9b82f8f60826e59b9d2e56a6e6ad9a842b84d57a9ec5ed7377bf120032b2c4c9
+      filename: "4xRealWebPhoto_v4_dat2.pth"
+      size_bytes: 140299118
+
+  - id: 4x-realwebphoto-v4-drct-l
+    kind: sr
+    purpose: "Very low-quality web & phone footage, strongest repair"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xRealWebPhoto_v4_drct-l by helaman (DRCT). The largest network trained on the RealWebPhoto degradations (blur, noise, compression, downscaling)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-RealWebPhoto-v4-drct-l
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xRealWebPhoto_v4_drct-l/4xRealWebPhoto_v4_drct-l.pth
+      sha256: ebbac92d14989f5c859cd516c81c3e4020d7f94422ed28aed23746adf5f5a18d
+      filename: "4xRealWebPhoto_v4_drct-l.pth"
+      size_bytes: 242789758
+
+  - id: 4x-nomoswebphoto-atd
+    kind: sr
+    purpose: "Web & phone photos and video, high detail"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xNomosWebPhoto_atd by helaman (ATD)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-NomosWebPhoto-atd
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomosWebPhoto_atd/4xNomosWebPhoto_atd.pth
+      sha256: f1af8e13824e44dfaefd9954e4dd9a5abe916f40971ed323f63727735aa0983c
+      filename: "4xNomosWebPhoto_atd.pth"
+      size_bytes: 81959074
+
+  - id: 4x-nomoswebphoto-realplksr
+    kind: sr
+    purpose: "Web & phone photos and video"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xNomosWebPhoto_RealPLKSR by helaman (PLKSR)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-NomosWebPhoto-RealPLKSR
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomosWebPhoto_RealPLKSR/4xNomosWebPhoto_RealPLKSR.pth
+      sha256: a9db66c9b674c6a5025b6ef3bee71a57c33b8605d8a2de0980470f89002efbbe
+      filename: "4xNomosWebPhoto_RealPLKSR.pth"
+      size_bytes: 29683482
+
+  - id: 4x-nomos2-otf-esrgan
+    kind: sr
+    purpose: "Damaged photos & video (blur, noise, JPEG)"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xNomos2_otf_esrgan by helaman (ESRGAN)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Nomos2-otf-esrgan
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomos2_otf_esrgan/4xNomos2_otf_esrgan.pth
+      sha256: 6c16d8b22b8468e0c0b766f1569e10a77d38fc7a1a929b804806dce84ddb85d3
+      filename: "4xNomos2_otf_esrgan.pth"
+      size_bytes: 33686030
+
+  - id: 4x-nomos2-realplksr-dysample
+    kind: sr
+    purpose: "Compressed photos & video"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xNomos2_realplksr_dysample by helaman (PLKSR)."
+    content: [live-action]
+    handles: [compression]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Nomos2-realplksr-dysample
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomos2_realplksr_dysample/4xNomos2_realplksr_dysample.pth
+      sha256: 96c8476ed2c42107628d10562b32ae89e7be3c2f7a53d29504823e9bafe8121d
+      filename: "4xNomos2_realplksr_dysample.pth"
+      size_bytes: 29715988
+
+  - id: 4x-nomos8k-atd-jpg
+    kind: sr
+    purpose: "JPEG-damaged photos, high detail"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: " 4xNomos8k_atd_jpg by helaman (ATD)."
+    content: [live-action]
+    handles: [compression]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Nomos8k-atd-jpg
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xNomos8k_atd_jpg/4xNomos8k_atd_jpg.pth
+      sha256: f29bbe14d651be9331462f038bc13f1027f2564e14a9b44e2f6bf6eb2286f840
+      filename: "4xNomos8k_atd_jpg.pth"
+      size_bytes: 81978555
+
+  - id: 4x-nomos8kschat-s
+    kind: sr
+    purpose: "Blurry or JPEG photos (HAT)"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xNomos8kSCHAT-S by helaman (HAT)."
+    content: [live-action]
+    handles: [compression, blur]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Nomos8kSCHAT-S
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/4xNomos8kSCHAT-S/4xNomos8kSCHAT-S.pth
+      sha256: e1400e16a10bf4dbbe003651bf76f9f9c4e083f0e5c93e1c3effe2fa91b41168
+      filename: "4xNomos8kSCHAT-S.pth"
+      size_bytes: 81096929
+
+  - id: 4x-nomos8ksc
+    kind: sr
+    purpose: "Blurry or JPEG photos (ESRGAN)"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "Nomos8kSC by helaman (ESRGAN)."
+    content: [live-action]
+    handles: [compression, blur]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Nomos8kSC
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/4xNomos8kSC/4xNomos8kSC.pth
+      sha256: 07a7ccd6443d012d528999cd77e40c7d265aaf1f656c499b37936e49603a0b1d
+      filename: "4xNomos8kSC.pth"
+      size_bytes: 67010245
+
+  - id: 4x-lsdirplusr
+    kind: sr
+    purpose: "Photos with noise, blur & JPEG"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xLSDIRplusR by helaman (ESRGAN)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-LSDIRplusR
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/4xLSDIRplus/4xLSDIRplusR.pth
+      sha256: c6e3aa62c56952b4c9478c4556f48eba0f3a3017e6c99abc7cf002b44a487ab2
+      filename: "4xLSDIRplusR.pth"
+      size_bytes: 67020037
+
+  - id: 4x-lsdirplusc
+    kind: sr
+    purpose: "JPEG-compressed photos"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "4xLSDIRplusC by helaman (ESRGAN)."
+    content: [live-action]
+    handles: [compression]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-LSDIRplusC
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/4xLSDIRplus/4xLSDIRplusC.pth
+      sha256: a2a88864ee3561e3e48b563605e56d74e2da3fddf7dd140b301276f5c3392308
+      filename: "4xLSDIRplusC.pth"
+      size_bytes: 67020037
+
+  - id: 2x-liveactionv1-span
+    kind: sr
+    purpose: "Compressed TV, film & streaming video (2x)"
+    category: damaged
+    scale: 2
+    architecture: spandrel
+    description: "2xLiveActionV1_SPAN by jcj83429 (SPAN). Keeps grain and colours; fixes compression, halos and softness. Does not denoise. Licence: non-commercial use only."
+    content: [live-action]
+    handles: [compression, blur]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-LiveActionV1-SPAN
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://raw.githubusercontent.com/jcj83429/upscaling/f73a3a02874360ec6ced18f8bdd8e43b5d7bba57/2xLiveActionV1_SPAN/2xLiveActionV1_SPAN_490000.pth
+      sha256: 8b166c75831ea7f694d9058ee9c8df8148af8cc1d2b57e69e6581b15cab572f7
+      filename: "2xLiveActionV1_SPAN_490000.pth"
+      size_bytes: 8947821
+
+  - id: 2x-vhs2hd
+    kind: sr
+    purpose: "VHS tapes & old TV recordings (2x)"
+    category: damaged
+    scale: 2
+    architecture: spandrel
+    description: "VHS2HD by asterixcool (PLKSR). Reduces haloing, ghosting and noise patterns of VHS recordings; made for PAL, works on NTSC."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-VHS2HD
+    licence: CC-BY-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-sa/4.0/
+    weights:
+      url: https://github.com/starinspace/StarinspaceUpscale/releases/download/Models/2xVHS2HD-RealPLKSR.pth
+      sha256: a702c79ec1d0421b46e91b1848b384a064b88ecffd14cffc998ded716a9e2d8a
+      filename: "2xVHS2HD-RealPLKSR.pth"
+      size_bytes: 29580290
+
+  - id: swinir-m-x4
+    kind: sr
+    purpose: "Degraded real-world photos (SwinIR-M)"
+    category: damaged
+    scale: 4
+    architecture: spandrel
+    description: "SwinIR-M-x4-GAN (realSR-BSRGAN-DFO-s64w8) by jingyunliang (SwinIR)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-realSR-BSRGAN-DFO-s64w8-SwinIR-M-x4-GAN
+    licence: Apache-2.0
+    licence_url: https://www.apache.org/licenses/LICENSE-2.0
+    weights:
+      url: https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x4_GAN.pth
+      sha256: b9afb61e65e04eb7f8aba5095d070bbe9af28df76acd0c9405aeb33b814bcfc6
+      filename: "003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x4_GAN.pth"
+      size_bytes: 67129861
+
+  - id: swinir-m-x2
+    kind: sr
+    purpose: "Degraded real-world photos, 2x (SwinIR-M)"
+    category: damaged
+    scale: 2
+    architecture: spandrel
+    description: "SwinIR-M-x2-GAN (realSR-BSRGAN-DFO-s64w8) by jingyunliang (SwinIR)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-realSR-BSRGAN-DFO-s64w8-SwinIR-M-x2-GAN
+    licence: Apache-2.0
+    licence_url: https://www.apache.org/licenses/LICENSE-2.0
+    weights:
+      url: https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth
+      sha256: f397408977a3e07eb06afb7238d453a12ef35ebab7328a54241f307860dbe342
+      filename: "003_realSR_BSRGAN_DFO_s64w8_SwinIR-M_x2_GAN.pth"
+      size_bytes: 66974517
+
+  - id: bsrgan-x2
+    kind: sr
+    purpose: "Badly degraded footage, 2x (BSRGAN)"
+    category: damaged
+    scale: 2
+    architecture: spandrel
+    description: "BSRGANx2 by cszn (ESRGAN)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-BSRGAN
+    licence: Apache-2.0
+    licence_url: https://www.apache.org/licenses/LICENSE-2.0
+    weights:
+      url: https://github.com/cszn/KAIR/releases/download/v1.0/BSRGANx2.pth
+      sha256: 614f68bcafcf123a1ea51cc75ae5741640a8b1d49dd75757ad3ad531f772c736
+      filename: "BSRGANx2.pth"
+      size_bytes: 66894171
+
+  - id: swinir-m-classical-x8
+    kind: sr
+    purpose: "Tiny clean images, 8x in one step (smooth, no repair)"
+    category: damaged
+    scale: 8
+    architecture: spandrel
+    description: "SwinIR-M-x8 (classicalSR-DF2K-s64w8) by jingyunliang (SwinIR). Trained on plain downscaling only: a smooth, faithful 8x enlargement without invented texture."
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://openmodeldb.info/models/8x-classicalSR-DF2K-s64w8-SwinIR-M
+    licence: Apache-2.0
+    licence_url: https://www.apache.org/licenses/LICENSE-2.0
+    weights:
+      url: https://github.com/JingyunLiang/SwinIR/releases/download/v0.0/001_classicalSR_DF2K_s64w8_SwinIR-M_x8.pth
+      sha256: 6b522c1ea5c21006ce3398797eb20b131ca0024cc6e7b8f3d5d29fad1310a49c
+      filename: "001_classicalSR_DF2K_s64w8_SwinIR-M_x8.pth"
+      size_bytes: 68460535
+
+  - id: 2x-animesharpv4
+    kind: sr
+    purpose: "Anime, sharpest lines (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "AnimeSharpV4 by kim2091 (RCAN). Very faithful to the source, even when it is heavily compressed. Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 6000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AnimeSharpV4
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/Kim2091/Kim2091-Models/releases/download/2x-AnimeSharpV4/2x-AnimeSharpV4_RCAN.safetensors
+      sha256: 6470bb91d6622d6acdff81132c1a8615b961b919ce2b9a01ce993378500cfbe1
+      filename: "2x-AnimeSharpV4_RCAN.safetensors"
+      size_bytes: 31053198
+
+  - id: 2x-animesharpv4-fast
+    kind: sr
+    purpose: "Anime, sharp lines, faster (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "AnimeSharpV4_Fast_RCAN_PU by kim2091 (RCAN). Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 6000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AnimeSharpV4-Fast-RCAN-PU
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/Kim2091/Kim2091-Models/releases/download/2x-AnimeSharpV4/2x-AnimeSharpV4_Fast_RCAN_PU.safetensors
+      sha256: b641c9eb10b43f26538177aa8f0fef8b9fc2a153afd1431d0a062a84c49ce6d0
+      filename: "2x-AnimeSharpV4_Fast_RCAN_PU.safetensors"
+      size_bytes: 31359158
+
+  - id: 2x-animejanai-hd-v3-compact
+    kind: sr
+    purpose: "HD anime to 4K, real-time capable (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "AnimeJaNai_HD_V3_Compact by the-database (RealESRGAN Compact). Made to make 1080p anime look as if it had been mastered in 4K. Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression, blur]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AnimeJaNai-HD-V3-Compact
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/the-database/mpv-upscale-2x_animejanai/releases/download/3.0.0/2x_AnimeJaNai_HD_V3_ModelsOnly.zip
+      sha256: af7307eee19e5982a8014dd0e4650d3bde2e25aa78d2105a4bdfd947636e4c8f
+      filename: "2x_AnimeJaNai_HD_V3_ModelsOnly.zip"
+      size_bytes: 4838742
+
+  - id: 2x-animejanai-hd-v3-ultracompact
+    kind: sr
+    purpose: "HD anime to 4K, faster (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "AnimeJaNai_HD_V3_UltraCompact by the-database (RealESRGAN Compact). Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression, blur]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AnimeJaNai-HD-V3-UltraCompact
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/the-database/mpv-upscale-2x_animejanai/releases/download/3.0.0/2x_AnimeJaNai_HD_V3_ModelsOnly.zip
+      sha256: 7c74ae2f919a31b96a08afc7dee37f1d1bae8b80844b7cc24ee82d43efd64110
+      filename: "2x_AnimeJaNai_HD_V3_ModelsOnly.zip"
+      size_bytes: 2456096
+
+  - id: 2x-animejanai-hd-v3-superultracompact
+    kind: sr
+    purpose: "HD anime to 4K, fastest (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "AnimeJaNai_HD_V3_SuperUltraCompact by the-database (RealESRGAN Compact). Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression, blur]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AnimeJaNai-HD-V3-SuperUltraCompact
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/the-database/mpv-upscale-2x_animejanai/releases/download/3.0.0/2x_AnimeJaNai_HD_V3_ModelsOnly.zip
+      sha256: 402f81e5b3202dfead0e6d2e092c9fc0372b687bff4bf2b5da68735bdc8206c8
+      filename: "2x_AnimeJaNai_HD_V3_ModelsOnly.zip"
+      size_bytes: 378338
+
+  - id: 2x-aniscale-2-esrgan
+    kind: sr
+    purpose: "Anime from DVD & web releases (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "AniScale-2-ESRGAN by sirosky (ESRGAN). For anime from about 2000 onwards; handles depth of field well. Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression, blur]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AniScale-2-ESRGAN
+    licence: CC-BY-NC-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/Sirosky/Upscale-Hub/releases/download/AniScale2/2x_AniScale2_ESRGAN_i16_110K.pth
+      sha256: b3ce1d0ef7b148525e206846eb4fa88a3bbadcbec120e9504117d602a674588b
+      filename: "2x_AniScale2_ESRGAN_i16_110K.pth"
+      size_bytes: 67050048
+
+  - id: 2x-aniscale-2-omnisr
+    kind: sr
+    purpose: "Anime from DVD & web releases (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "AniScale-2-OmniSR by sirosky (OmniSR). Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression, blur]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AniScale-2-OmniSR
+    licence: CC-BY-NC-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/Sirosky/Upscale-Hub/releases/download/AniScale2/2x_AniScale2_Omni_i16_40K.pth
+      sha256: 7e165a666239befc3985bb073a24bb82a5a84a83314ba724284d0918c5408675
+      filename: "2x_AniScale2_Omni_i16_40K.pth"
+      size_bytes: 3393786
+
+  - id: 2x-ani4vk-v2-compact
+    kind: sr
+    purpose: "Modern anime, Blu-ray to poor web rips (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "Ani4VK v2 Compact by sirosky (RealESRGAN Compact). Licence: non-commercial use only."
+    content: [animation]
+    handles: [noise, compression, blur]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-Ani4VK-v2-Compact
+    licence: CC-BY-NC-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/Sirosky/Upscale-Hub/releases/download/Ani4K-v2/2x_Ani4Kv2_G6i2_Compact_107500.pth
+      sha256: fe99290e9e4f95424219566dbe159184a123587622cc00bc632b1eecbd07d7a4
+      filename: "2x_Ani4Kv2_G6i2_Compact_107500.pth"
+      size_bytes: 2419540
+
+  - id: 4x-hfa2k-ludvae-realplksr
+    kind: sr
+    purpose: "Anime with compression, noise & blur (4x)"
+    category: animation
+    scale: 4
+    architecture: spandrel
+    description: "4xHFA2k_ludvae_realplksr_dysample by helaman (PLKSR)."
+    content: [animation]
+    handles: [noise, compression, blur]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-HFA2k-ludvae-realplksr-dysample
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xHFA2k_ludvae_realplksr_dysample/4xHFA2k_ludvae_realplksr_dysample.pth
+      sha256: c6e44af18fd3159787b0dbf81d432a6c1ba12c736fc1184b107ed091e49e327c
+      filename: "4xHFA2k_ludvae_realplksr_dysample.pth"
+      size_bytes: 29715988
+
+  - id: 4x-hfa2k-ludvae-swinir-light
+    kind: sr
+    purpose: "Anime with compression, noise & blur, small transformer (4x)"
+    category: animation
+    scale: 4
+    architecture: spandrel
+    description: "4xHFA2kLUDVAESwinIR_light by helaman (SwinIR)."
+    content: [animation]
+    handles: [noise, compression, blur]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 6000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-HFA2kLUDVAESwinIR-light
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/4xHFA2kLUDVAESwinIR_light/4xHFA2kLUDVAESwinIR_light.pth
+      sha256: 6563dd659ef2bf15cd594de243d4eee6cb41e66c43ab3df58c5be8fd2e3b5735
+      filename: "4xHFA2kLUDVAESwinIR_light.pth"
+      size_bytes: 17225509
+
+  - id: 2x-hfa2k-avc-compact
+    kind: sr
+    purpose: "Anime video with H.264 compression (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "2xHFA2kAVCCompact by helaman (RealESRGAN Compact)."
+    content: [animation]
+    handles: [compression]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-HFA2kAVCCompact
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/2xHFA2kAVCCompact/2xHFA2kAVCCompact.pth
+      sha256: ceaf8d6b5db4bf1ddbc9bc757eb08e67b3409472d9373c5342ea3711ed28365e
+      filename: "2xHFA2kAVCCompact.pth"
+      size_bytes: 4838301
+
+  - id: 2x-modernspanimation-v1
+    kind: sr
+    purpose: "Modern western cartoons & animation (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "ModernSpanimationV1 by tntwise (SPAN)."
+    content: [animation]
+    handles: [compression, blur]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-ModernSpanimationV1
+    licence: MIT
+    licence_url: https://opensource.org/license/mit
+    weights:
+      url: https://github.com/TNTwise/Models/releases/download/2x_ModernSpanimationV1/2x_ModernSpanimationV1.pth
+      sha256: bc6ca08ab1eeb9884a5c43c025eda97a5aa9ccfaa567734f426aedf55cf78327
+      filename: "2x_ModernSpanimationV1.pth"
+      size_bytes: 15830922
+
+  - id: 2x-starsample-v2
+    kind: sr
+    purpose: "Flat-colour 2D cartoons (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "StarSample V2.0 by derpy (ESRGAN). Made for My Little Pony: Friendship is Magic; works on similar flat-coloured cartoons. Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression]
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-StarSample-V2
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/Derpiesaurus/models/releases/download/v2.0/2x_StarSample_V2.0.safetensors
+      sha256: 19e93b679887a8122a476e374abf0f91c3c2d7e5bdf885d658e015a5679514d1
+      filename: "2x_StarSample_V2.0.safetensors"
+      size_bytes: 66716388
+
+  - id: 2x-starsample-v2-lite
+    kind: sr
+    purpose: "Flat-colour 2D cartoons (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "StarSample V2.0 Lite by derpy (SPAN). Licence: non-commercial use only."
+    content: [animation]
+    handles: [compression]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-StarSample-V2-Lite
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://github.com/Derpiesaurus/models/releases/download/v2.0_Lite/2x_StarSample_V2.0_Lite.safetensors
+      sha256: 4008dfc72295bb48574a389bf4bd4e55d9af3766f34b6b68cc7bc0c78bd22a0b
+      filename: "2x_StarSample_V2.0_Lite.safetensors"
+      size_bytes: 8903660
+
+  - id: 4x-drawimation-compact
+    kind: sr
+    purpose: "Anime from DVD, soft look (4x)"
+    category: animation
+    scale: 4
+    architecture: spandrel
+    description: "Drawimation compact by asterixcool (RealESRGAN Compact)."
+    content: [animation]
+    handles: [compression]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Drawimation-compact
+    licence: CC-BY-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-sa/4.0/
+    weights:
+      url: https://github.com/starinspace/StarinspaceUpscale/releases/download/Models/4xDrawimation-compact.pth
+      sha256: e8458cc2aa62ee057417d4d18e0acfd5e8792456b796e111e848575f2f74e5f4
+      filename: "4xDrawimation-compact.pth"
+      size_bytes: 2502676
+
+  - id: 4x-anifilm-compact
+    kind: sr
+    purpose: "Anime films (4x)"
+    category: animation
+    scale: 4
+    architecture: spandrel
+    description: "Anifilm Compact (4x) by kim2091 (RealESRGAN Compact). Licence: non-commercial use only."
+    content: [animation]
+    handles: []
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-anifilm-compact
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://objectstorage.us-phoenix-1.oraclecloud.com/n/ax6ygfvpvzka/b/open-modeldb-files/o/4x-anifilm-compact.pth
+      sha256: e0b43e038cf891fdd1aa5729e310c3f7532e84faaa53135795d18d495a10238b
+      filename: "4x-anifilm-compact.pth"
+      size_bytes: 2502086
+
+  - id: 2x-digitalfilm-v5-lite
+    kind: sr
+    purpose: "Grainy hand-drawn animation from old DVDs (2x)"
+    category: animation
+    scale: 2
+    architecture: spandrel
+    description: "DigitalFilmV5 Lite by optimusprimal (ESRGAN). Keeps some grain while cleaning and sharpening."
+    content: [animation]
+    handles: [noise]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-DigitalFilmV5-Lite
+    licence: WTFPL
+    licence_url: http://www.wtfpl.net/
+    weights:
+      url: https://objectstorage.us-phoenix-1.oraclecloud.com/n/ax6ygfvpvzka/b/open-modeldb-files/o/2x-DigitalFilmV5-Lite.pth
+      sha256: ed75272d5c55318c7307bcb4faaba63a69f0cfa1576dd1068b9737ecdfd3e734
+      filename: "2x-DigitalFilmV5-Lite.pth"
+      size_bytes: 8199999
+
+  - id: 4x-ultrasharpv2
+    kind: sr
+    purpose: "Pictures of any kind, very sharp (photos, art, anime)"
+    category: ai-art
+    scale: 4
+    architecture: spandrel
+    description: "UltraSharpV2 by kim2091 (DAT). A popular all-round image upscaler (UltraSharp V2, DAT). Licence: non-commercial use only."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-UltraSharpV2
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://huggingface.co/Kim2091/UltraSharpV2/resolve/main/4x-UltraSharpV2.safetensors?download=true
+      sha256: 2b5db674aa8f3864a696dccd1d07d7cc0500fbf220f35044cd30eee9a7f971a7
+      filename: "4x-UltraSharpV2.safetensors"
+      size_bytes: 139792588
+
+  - id: 4x-lexicahat
+    kind: sr
+    purpose: "AI-generated images (Stable Diffusion, Midjourney...)"
+    category: ai-art
+    scale: 4
+    architecture: spandrel
+    description: "4xLexicaHAT by helaman (HAT)."
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 16000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-LexicaHAT
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/4xLexicaHAT/4xLexicaHAT.pth
+      sha256: f3441f602f221ae111253b72ccb561e9f7a1a3dc84ab27923edea0a9581ea1dd
+      filename: "4xLexicaHAT.pth"
+      size_bytes: 85149569
+
+  - id: 2x-lexicaswinir
+    kind: sr
+    purpose: "AI-generated images, 2x"
+    category: ai-art
+    scale: 2
+    architecture: spandrel
+    description: "2xLexicaSwinIR by helaman (SwinIR)."
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-LexicaSwinIR
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/raw/main/2xLexicaSwinIR/2xLexicaSwinIR.pth
+      sha256: 443441716478b970eba85d21e2d3e4abf8273b82b1030cb91b8885fe0c98f575
+      filename: "2xLexicaSwinIR.pth"
+      size_bytes: 59011833
+
+  - id: 4x-artfaces-realplksr
+    kind: sr
+    purpose: "Faces in paintings, drawings & AI art"
+    category: ai-art
+    scale: 4
+    architecture: spandrel
+    description: " 4xArtFaces_realplksr_dysample by helaman (PLKSR)."
+    content: [live-action]
+    handles: []
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-ArtFaces-realplksr-dysample
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xArtFaces_realplksr_dysample/4xArtFaces_realplksr_dysample.pth
+      sha256: bf313b7bad114cc22538c28341fcfc9d9e9d9c623ad25633ee49ee34625e271a
+      filename: "4xArtFaces_realplksr_dysample.pth"
+      size_bytes: 29715988
+
+  - id: 4x-pbrify-v4
+    kind: sr
+    purpose: "Old game textures, best quality"
+    category: games
+    scale: 4
+    architecture: spandrel
+    description: "PBRify_UpscalerV4 by kim2091 (DAT)."
+    content: [live-action]
+    handles: [compression]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-PBRify-UpscalerV4
+    licence: CC0-1.0
+    licence_url: https://creativecommons.org/publicdomain/zero/1.0/
+    weights:
+      url: https://github.com/Kim2091/Kim2091-Models/releases/download/4x-PBRify_UpscalerV4/4x-PBRify_UpscalerV4.pth
+      sha256: 82db39e31e01da6816a9814c0553a8dcdb7bd2d655353e67075c9295068cb789
+      filename: "4x-PBRify_UpscalerV4.pth"
+      size_bytes: 140345646
+
+  - id: 4x-pbrify-span-v4
+    kind: sr
+    purpose: "Old game textures"
+    category: games
+    scale: 4
+    architecture: spandrel
+    description: "4x-PBRify_UpscalerSPANV4 by kim2091 (SPAN)."
+    content: [live-action]
+    handles: [compression]
+    speed: fast
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 1500
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-PBRify-UpscalerSPANV4
+    licence: CC0-1.0
+    licence_url: https://creativecommons.org/publicdomain/zero/1.0/
+    weights:
+      url: https://github.com/Kim2091/PBRify_Remix/raw/main/Extras/Old_Models/4x-PBRify_UpscalerSPANV4.pth
+      sha256: d1f1fa1af7a5ab23fcf143e75aac4951e6c52d56bf77d9ccd4d004a4831d0461
+      filename: "4x-PBRify_UpscalerSPANV4.pth"
+      size_bytes: 9016813
+
+  - id: 4x-textures-gtav-rgt-s
+    kind: sr
+    purpose: "Realistic game textures"
+    category: games
+    scale: 4
+    architecture: spandrel
+    description: "4xTextures_GTAV_rgt-s by helaman (RGT)."
+    content: [live-action]
+    handles: [compression]
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-Textures-GTAV-rgt-s
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/4xTextures_GTAV_rgt-s/4xTextures_GTAV_rgt-s.pth
+      sha256: 5a1f614d41d7043e7e8de32081d1d7e9d1b2ae30f1ecf89b4e059bcb331e5deb
+      filename: "4xTextures_GTAV_rgt-s.pth"
+      size_bytes: 136009036
+
+  - id: 2x-aomr-mosr
+    kind: sr
+    purpose: "Game textures & renders (2x)"
+    category: games
+    scale: 2
+    architecture: spandrel
+    description: "2xAoMR_mosr by helaman (MoSR)."
+    content: [live-action]
+    handles: [compression]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-AoMR-mosr
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://github.com/Phhofm/models/releases/download/2xAoMR_mosr/2xAoMR_mosr.pth
+      sha256: 6297be8b3671e4f49bb67de55901a43a9d79a829a69263b3f1cd77242b084dd8
+      filename: "2xAoMR_mosr.pth"
+      size_bytes: 17121346
+
+  - id: 8x-ms-unpainter
+    kind: sr
+    purpose: "Pixel art & MS Paint drawings (8x)"
+    category: games
+    scale: 8
+    architecture: spandrel
+    description: "MS Unpainter by foolhardy (ESRGAN). Licence: non-commercial use only."
+    content: [animation]
+    handles: []
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/8x-MS-Unpainter
+    licence: CC-BY-NC-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-nc-sa/4.0/
+    licence_restricted: true
+    weights:
+      url: https://objectstorage.us-phoenix-1.oraclecloud.com/n/ax6ygfvpvzka/b/open-modeldb-files/o/8x-MS-Unpainter.pth
+      sha256: f5780ebec9335dbebe71c328da319d699a413d7a913d704b4b73c91ccb028503
+      filename: "8x-MS-Unpainter.pth"
+      size_bytes: 67173423
+
+  - id: 2x-text2hd
+    kind: sr
+    purpose: "Low-quality text, screenshots & scans (2x)"
+    category: text
+    scale: 2
+    architecture: spandrel
+    description: "Text2HD v.1 by asterixcool (PLKSR)."
+    content: [live-action]
+    handles: [noise, compression, blur]
+    speed: medium
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 3000
+    bundled: false
+    source_url: https://openmodeldb.info/models/2x-Text2HD-v-1
+    licence: CC-BY-SA-4.0
+    licence_url: https://creativecommons.org/licenses/by-sa/4.0/
+    weights:
+      url: https://github.com/starinspace/StarinspaceUpscale/releases/download/Models/2x_Text2HD_v.1-RealPLKSR.pth
+      sha256: 1aeb4f5816fa2fd302a2c8aef49c3252cc14a5e22c4d9359f5c266a823ceb269
+      filename: "2x_Text2HD_v.1-RealPLKSR.pth"
+      size_bytes: 29580290
+
+  - id: 4x-dwtp-ds-dat2-v3
+    kind: sr
+    purpose: "Printed photos & comics: removes halftone dots"
+    category: text
+    scale: 4
+    architecture: spandrel
+    description: "DWTP DS dat2 v3 by umzi-x-dead (DAT)."
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    memory_per_pixel: 12000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-DWTP-DS-dat2-v3
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://objectstorage.us-phoenix-1.oraclecloud.com/n/ax6ygfvpvzka/b/open-modeldb-files/o/4x-DWTP-DS-dat2-v3.pth
+      sha256: 7ce4d37f9b9ef951086e721d79a371342e092904e841ef8cc38484abd8f73050
+      filename: "4x-DWTP-DS-dat2-v3.pth"
+      size_bytes: 140299118
+
+  - id: 4x-wtp-uds-esrgan
+    kind: sr
+    purpose: "Manga & comic scans"
+    category: text
+    scale: 4
+    architecture: spandrel
+    description: "WTP UDS Esrgan by umzi-x-dead (ESRGAN)."
+    content: [animation]
+    handles: []
+    speed: slow
+    rank: 0
+    backends: [torch]
+    fp16: true
+    memory_per_pixel: 9000
+    bundled: false
+    source_url: https://openmodeldb.info/models/4x-WTP-UDS-Esrgan
+    licence: CC-BY-4.0
+    licence_url: https://creativecommons.org/licenses/by/4.0/
+    weights:
+      url: https://objectstorage.us-phoenix-1.oraclecloud.com/n/ax6ygfvpvzka/b/open-modeldb-files/o/4x-WTP-UDS-Esrgan.pth
+      sha256: 6b5823794353594d2b3b35930692a25687b2f707e0246dc5c47cad4dfddf4ca9
+      filename: "4x-WTP-UDS-Esrgan.pth"
+      size_bytes: 67029568
+
+  - id: aurasr-v2
+    kind: sr
+    purpose: "AI images & photos: invents fine, realistic detail"
+    category: ai-art
+    scale: 4
+    architecture: spandrel
+    description: "AuraSR v2 by fal (AuraSR). A 600 M-parameter GAN (GigaGAN architecture) by fal; FP32 only."
+    content: [live-action]
+    handles: []
+    speed: very-slow
+    rank: 0
+    backends: [torch]
+    fp16: false
+    bf16: false
+    max_tile: 64
+    memory_per_pixel: 40000
+    bundled: false
+    source_url: https://huggingface.co/fal/AuraSR-v2
+    licence: Apache-2.0
+    licence_url: https://www.apache.org/licenses/LICENSE-2.0
+    weights:
+      url: https://huggingface.co/fal/AuraSR-v2/resolve/main/model.safetensors
+      sha256: 8a80b4546f3f49b9095733cb9699030409339e2f4eb0ae9c1ada14c7d21d4dde
+      filename: "aurasr-v2.safetensors"
+      size_bytes: 2470247916

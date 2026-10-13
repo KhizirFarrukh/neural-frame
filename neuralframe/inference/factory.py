@@ -108,7 +108,9 @@ def model_precision(model: ModelSpec, requested: str, device: torch.device) -> s
     if device.type != "cuda":
         return "fp32"
     if requested == "fp16" and not model.fp16:
-        return "bf16" if bf16_supported(device) else "fp32"
+        return "bf16" if model.bf16 and bf16_supported(device) else "fp32"
+    if requested == "bf16" and not model.bf16:
+        return "fp32"
     return requested
 
 
@@ -202,6 +204,10 @@ def plan_inference(
         else:
             chosen_tile = next((t for t in TILE_CANDIDATES if per_px * t * t <= budget), TILE_CANDIDATES[-1])
             notes.append(f"frame does not fit the {budget // 2**20} MB budget whole; tiling at {chosen_tile}px")
+    if model.max_tile is not None and (chosen_tile or max(h, w)) > model.max_tile and max(h, w) > model.max_tile:
+        chosen_tile = model.max_tile
+        overlap = min(overlap, model.max_tile // 4)
+        notes.append(f"{model.id} works on {model.max_tile}px patches: tiling at {chosen_tile}px, overlap {overlap}")
     tile_px = h * w if chosen_tile is None else min(chosen_tile, h) * min(chosen_tile, w)
     fit = max(1, budget // max(per_px * tile_px, 1))
     chosen_batch = batch if batch is not None else int(min(fit, cap))

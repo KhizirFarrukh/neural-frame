@@ -29,7 +29,6 @@ def _self_test(window: Any, app: Any, sample: Path | None, report: Path) -> int:
     import time
 
     from neuralframe.bundle import app_dir
-    from neuralframe.models.download import weights_path
 
     result: dict[str, Any] = {"frozen": app_dir() is not None, "ok": False}
     try:
@@ -55,12 +54,12 @@ def _self_test(window: Any, app: Any, sample: Path | None, report: Path) -> int:
             result["spandrel_error"] = str(exc)
         models = {}
         for m in window.registry.all():
-            if m.weights is not None and m.bundled and m.origin == "builtin":
-                from neuralframe.bundle import bundled
-
-                local = weights_path(m, window.settings.paths.models()).is_file()
-                models[m.id] = bool(bundled("models", m.id, m.weights.filename)) or local
+            if m.weights is not None and m.bundled and m.origin == "builtin":  # included with --with-models
+                models[m.id] = window.library.status(m).ready
         result["models_available"] = models
+        manager = window.open_model_manager()
+        result["model_manager_rows"] = len(manager._rows)
+        manager.close()
         if sample is not None:
             loaded: list[bool] = []
             window.file_loaded.connect(lambda: loaded.append(True))

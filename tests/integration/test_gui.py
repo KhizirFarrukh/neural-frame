@@ -155,7 +155,7 @@ def test_automatic_model_choice_is_shown(qtbot: Any, window: MainWindow, clip: C
         load(qtbot, window, src)
     assert window.profile is not None and window.recommended is not None
     assert window.registry.get(window.recommended).speed == "fast"  # the test window runs on the CPU
-    assert f"<b>{window.recommended}</b>" in window.auto_label.text()
+    assert f"({window.recommended})</b>" in window.auto_label.text()  # purpose - speed (id)
     choose(window.model_combo, "lanczos")
     assert window.auto_label.text() == ""
     choose(window.model_combo, "auto")

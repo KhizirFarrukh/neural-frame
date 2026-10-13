@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import functools
+import html
 import subprocess
 import sys
 import threading
@@ -10,7 +11,16 @@ from pathlib import Path
 from typing import Any
 
 from PySide6.QtCore import Qt, QUrl, Signal
-from PySide6.QtGui import QCloseEvent, QDesktopServices, QDragEnterEvent, QDropEvent, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QCloseEvent,
+    QDesktopServices,
+    QDragEnterEvent,
+    QDropEvent,
+    QKeySequence,
+    QPixmap,
+    QStandardItemModel,
+)
 from PySide6.QtWidgets import (
     QButtonGroup,
     QComboBox,
@@ -46,6 +56,7 @@ from neuralframe.gui.threads import Dispatcher
 from neuralframe.io.ffmpeg import FFmpegTools, locate_ffmpeg
 from neuralframe.io.media import MediaInfo
 from neuralframe.io.probe import probe
+from neuralframe.models.library import DownloadProgress, ModelLibrary
 from neuralframe.models.registry import ModelRegistry
 
 TARGETS = [("4K (2160p)", "4k"), ("8K (4320p)", "8k"), ("1440p", "1440p"), ("1080p", "1080p"), ("720p", "720p"),
@@ -74,6 +85,7 @@ class MainWindow(QMainWindow):
     preview_loaded = Signal()
     recommendation_ready = Signal()
     model_added = Signal(str)
+    model_status_updated = Signal()
 
     def __init__(self, settings: Settings, *, registry: ModelRegistry | None = None,
                  capabilities: Any = None) -> None:
@@ -82,6 +94,13 @@ class MainWindow(QMainWindow):
         self.registry = registry or ModelRegistry.load()
         self._caps = capabilities
         self._dispatch = Dispatcher(self)
+        from neuralframe.gui.models_dialog import DownloadController
+
+        self.library = ModelLibrary.from_settings(settings)
+        self.downloads = DownloadController(self.library, self)
+        self.downloads.progress.connect(lambda mid, _event: self._update_model_status())
+        self.downloads.finished.connect(self._download_finished)
+        self.models_window: Any = None
         self._tools: FFmpegTools | None = None
         self.input_path: Path | None = None
         self.media: MediaInfo | None = None
@@ -98,6 +117,7 @@ class MainWindow(QMainWindow):
         self.setAcceptDrops(True)
         self.resize(980, 860)
         self._build()
+        self._build_menus()
         self._set_media_controls(False)
         self._update_mode()
         self._load_system_info()
@@ -180,12 +200,25 @@ class MainWindow(QMainWindow):
         self.model_combo = QComboBox()
         self._fill_models()
         self.model_combo.currentIndexChanged.connect(self._update_recommendation)
-        self.add_model_button = QPushButton("Add model...")
-        self.add_model_button.setToolTip("Use your own model file (.pth / .safetensors), e.g. from OpenModelDB")
-        self.add_model_button.clicked.connect(self._choose_model_file)
+        self.model_combo.setToolTip("Models are listed by what they are for; the name in brackets is the "
+                                    "model's own name. Automatic picks one for your file.")
+        self.models_button = QPushButton("Models...")
+        self.models_button.setToolTip("See all models, download them ahead of time, use files you already have, "
+                                      "check for updates")
+        self.models_button.clicked.connect(lambda: self.open_model_manager())
         model_row = QHBoxLayout()
         model_row.addWidget(self.model_combo, 1)
-        model_row.addWidget(self.add_model_button)
+        model_row.addWidget(self.models_button)
+        self.model_status = QLabel("")
+        self.model_status.setWordWrap(True)
+        self.download_now_button = QPushButton("Download now")
+        self.download_now_button.clicked.connect(self._download_selected)
+        self.cancel_download_button = QPushButton("Cancel download")
+        self.cancel_download_button.clicked.connect(self._cancel_selected_download)
+        status_row = QHBoxLayout()
+        status_row.addWidget(self.model_status, 1)
+        status_row.addWidget(self.download_now_button)
+        status_row.addWidget(self.cancel_download_button)
         self.auto_label = QLabel("")
         self.auto_label.setWordWrap(True)
         self.auto_label.setTextFormat(Qt.TextFormat.RichText)
@@ -201,6 +234,7 @@ class MainWindow(QMainWindow):
         uf.addRow("", self.custom_target)
         uf.addRow("Model", model_row)
         uf.addRow("", self.auto_label)
+        uf.addRow("", status_row)
         uf.addRow("Preset", self.preset_combo)
 
         self.framegen_box = QGroupBox("Frame generation")
@@ -303,6 +337,135 @@ class MainWindow(QMainWindow):
         self.statusBar().showMessage(f"NeuralFrame {__version__}")
         self._set_running(False)
 
+    def _build_menus(self) -> None:
+        menu = self.menuBar()
+        file_menu = menu.addMenu("&File")
+        open_action = QAction("&Open a video or picture...", self)
+        open_action.setShortcut(QKeySequence.StandardKey.Open)
+        open_action.triggered.connect(self._choose_file)
+        quit_action = QAction("&Quit", self)
+        quit_action.setShortcut(QKeySequence.StandardKey.Quit)
+        quit_action.triggered.connect(self.close)
+        file_menu.addAction(open_action)
+        file_menu.addSeparator()
+        file_menu.addAction(quit_action)
+        models_menu = menu.addMenu("&Models")
+        manage = QAction("&Model manager...", self)
+        manage.setShortcut(QKeySequence("Ctrl+M"))
+        manage.setToolTip("All models: download, delete, use files you have, updates")
+        manage.triggered.connect(lambda: self.open_model_manager())
+        updates = QAction("Check for model &updates", self)
+        updates.triggered.connect(self._check_model_updates)
+        add = QAction("&Add your own model file...", self)
+        add.triggered.connect(self._choose_model_file)
+        for action in (manage, updates, add):
+            models_menu.addAction(action)
+        help_menu = menu.addMenu("&Help")
+        how = QAction("&How to use NeuralFrame", self)
+        how.setShortcut(QKeySequence.StandardKey.HelpContents)
+        how.triggered.connect(self._show_help)
+        about = QAction("&About NeuralFrame", self)
+        about.triggered.connect(lambda: QMessageBox.about(
+            self, "About NeuralFrame",
+            f"NeuralFrame {__version__}\n\nMakes videos and pictures sharper and larger with AI, and videos "
+            "smoother with frame generation. Everything runs on this computer.\n\nModel licences: see the Models "
+            "window (hover over a model)."))
+        help_menu.addAction(how)
+        help_menu.addAction(about)
+
+    def _show_help(self) -> None:
+        QMessageBox.information(self, "How to use NeuralFrame", (
+            "1. Open a video or picture (or drop it on the window).\n"
+            "2. Choose Upscale, Frame generation or Both.\n"
+            "3. Model: leave it on Automatic, or pick what matches your content - the list says what each model "
+            "is for (cartoons, old VHS tapes, phone videos, photos, games...).\n"
+            "4. Press Start. If the model is not on this computer yet, it is downloaded first (you see the "
+            "progress), then the work starts.\n\n"
+            "Models menu: see every model, download some ahead of time, use model files you already have, "
+            "delete models to free space, check for updates.\n\n"
+            "Presets: fast = quick models only, balanced = the default, quality = the slowest, most detailed "
+            "models."))
+
+    # ---- models ------------------------------------------------------------------------------------------
+
+    def selected_model(self) -> Any:
+        """The model the next job will use (the automatic choice when Automatic is selected), or None."""
+        if self.mode == "framegen":
+            return None
+        mid = self.model_combo.currentData()
+        if mid == "auto":
+            mid = self.recommended
+        if not mid:
+            return None
+        try:
+            return self.registry.get(mid)
+        except NeuralFrameError:
+            return None
+
+    def _update_model_status(self) -> None:
+        """The line under the model list: ready, being downloaded (with progress), or still to download."""
+        spec = self.selected_model()
+        self.download_now_button.setVisible(False)
+        self.cancel_download_button.setVisible(False)
+        if spec is None or spec.weights is None:
+            self.model_status.setText("")
+            self.model_status_updated.emit()
+            return
+        prefix = "The automatic choice" if self.model_combo.currentData() == "auto" else "This model"
+        if self.downloads.is_active(spec.id):
+            last: DownloadProgress | None = self.downloads.last.get(spec.id)
+            self.model_status.setText(f"Downloading {spec.id}: {last.text() if last else 'starting...'}")
+            self.cancel_download_button.setVisible(True)
+        else:
+            status = self.library.status(spec)
+            if status.ready:
+                self.model_status.setText(f"{prefix} is on this computer and ready.")
+            else:
+                size = f"{status.size_bytes / 1e6:.0f} MB" if status.size_bytes else "size unknown"
+                restricted = " Its licence allows personal use only." if spec.licence_restricted else ""
+                self.model_status.setText(f"{prefix} is not downloaded yet ({size}). It is downloaded when you press "
+                                          f"Start, or now:{restricted}")
+                self.download_now_button.setText("Resume download" if status.partial_bytes else "Download now")
+                self.download_now_button.setVisible(True)
+        self.model_status_updated.emit()
+
+    def _download_selected(self) -> None:
+        spec = self.selected_model()
+        if spec is not None:
+            self.downloads.start(spec)
+            self._update_model_status()
+
+    def _cancel_selected_download(self) -> None:
+        spec = self.selected_model()
+        if spec is not None:
+            self.downloads.cancel(spec.id)
+
+    def _download_finished(self, model_id: str, outcome: str, error: str) -> None:
+        self._update_model_status()
+        if outcome == "failed":
+            self.error_label.setText(f"Could not download {model_id}: {error}")
+        elif outcome == "done":
+            self.statusBar().showMessage(f"Model {model_id} downloaded.", 8000)
+
+    def open_model_manager(self, focus: str | None = None) -> Any:
+        """The Models window (created once; downloads keep running when it is closed)."""
+        from neuralframe.gui.models_dialog import ModelManager
+
+        if self.models_window is None:
+            self.models_window = ModelManager(self.registry, self.library, self.downloads, self)
+            self.models_window.changed.connect(lambda _mid: self._update_model_status())
+            self.models_window.add_model_requested.connect(self._choose_model_file)
+        else:
+            self.models_window.refresh()
+        if focus:
+            self.models_window.focus_model(focus)
+        self.models_window.show()
+        self.models_window.raise_()
+        return self.models_window
+
+    def _check_model_updates(self) -> None:
+        self.open_model_manager().check_updates()
+
     # ---- helpers ---------------------------------------------------------------------------------------
 
     def tools(self) -> FFmpegTools:
@@ -371,18 +534,27 @@ class MainWindow(QMainWindow):
         current = select or self.model_combo.currentData() or "auto"
         self.model_combo.blockSignals(True)
         self.model_combo.clear()
-        self.model_combo.addItem("Automatic (analyses the video)", "auto")
+        self.model_combo.setMaxVisibleItems(30)
+        self.model_combo.addItem("Automatic: picks the right model for your video (auto)", "auto")
         self.model_combo.setItemData(0, "Looks at the video (cartoon or filmed, noise, compression, real "
                                         "resolution) and picks the best model within the preset's speed",
                                      Qt.ItemDataRole.ToolTipRole)
-        for m in self.registry.all():
-            if m.kind == "interpolation":
-                continue
-            extras = [x for x in (m.speed, "temporal" if m.is_temporal else None,
-                                  "added" if m.origin == "user" else None) if x]
-            self.model_combo.addItem(f"{m.id}  (x{m.scale}{', ' + ', '.join(extras) if extras else ''})", m.id)
-            self.model_combo.setItemData(self.model_combo.count() - 1, f"{m.description}\nlicence: {m.licence}",
-                                         Qt.ItemDataRole.ToolTipRole)
+        items = self.model_combo.model()
+        for title, models in self.registry.grouped():
+            self.model_combo.insertSeparator(self.model_combo.count())
+            self.model_combo.addItem(title.upper(), None)
+            if isinstance(items, QStandardItemModel):  # a heading, not a choice
+                heading = items.item(self.model_combo.count() - 1)
+                heading.setFlags(Qt.ItemFlag.NoItemFlags)
+                font = heading.font()
+                font.setBold(True)
+                heading.setFont(font)
+            for m in models:
+                marks = [x for x in ("personal use only" if m.licence_restricted else None,
+                                     "added" if m.origin == "user" else None) if x]
+                self.model_combo.addItem("    " + m.label + "".join(f"  [{x}]" for x in marks), m.id)
+                self.model_combo.setItemData(self.model_combo.count() - 1, _model_tooltip(m),
+                                             Qt.ItemDataRole.ToolTipRole)
         index = self.model_combo.findData(current)
         self.model_combo.setCurrentIndex(index if index >= 0 else 0)
         self.model_combo.blockSignals(False)
@@ -413,6 +585,7 @@ class MainWindow(QMainWindow):
         self._dispatch.run(work, done, failed, name="nf-analyse")
 
     def _update_recommendation(self) -> None:
+        self._update_model_status()
         if self.model_combo.currentData() != "auto":
             self.auto_label.setText("")
             return
@@ -430,9 +603,10 @@ class MainWindow(QMainWindow):
                            preset=self.preset_combo.currentData() or "balanced", is_image=self.media.is_image,
                            gpu=gpu)
         self.recommended = choice.model
-        speed = self.registry.get(choice.model).speed or ""
-        reasons = "; ".join(choice.reasons[:4])
-        self.auto_label.setText(f"Automatic choice: <b>{choice.model}</b> ({speed}) - {reasons}")
+        label = html.escape(self.registry.get(choice.model).label)
+        reasons = html.escape("; ".join(choice.reasons[:4]))
+        self.auto_label.setText(f"Automatic choice: <b>{label}</b> - {reasons}")
+        self._update_model_status()
         self.recommendation_ready.emit()
 
     def _choose_model_file(self) -> None:
@@ -445,7 +619,6 @@ class MainWindow(QMainWindow):
         """Register a model file (checked and copied in the background) and select it."""
         self.error_label.clear()
         self.status_label.setText(f"Checking {file.name}...")
-        self.add_model_button.setEnabled(False)
 
         def work() -> Any:
             from neuralframe.models.custom import add_user_model
@@ -455,14 +628,15 @@ class MainWindow(QMainWindow):
         def done(spec: Any) -> None:
             from neuralframe.models.registry import ModelRegistry
 
-            self.add_model_button.setEnabled(True)
             self.registry = ModelRegistry([*self.registry.all(), spec])
             self._fill_models(select=spec.id)
+            if self.models_window is not None:
+                self.models_window.registry = self.registry
+                self.models_window.populate()
             self.status_label.setText(f"Added model {spec.id}: {spec.description}")
             self.model_added.emit(spec.id)
 
         def failed(exc: BaseException) -> None:
-            self.add_model_button.setEnabled(True)
             self.status_label.setText("Could not add the model.")
             self._show_error(exc)
             self.model_added.emit("")
@@ -708,8 +882,17 @@ class MainWindow(QMainWindow):
     def _on_progress(self, event: ProgressEvent) -> None:
         if self._runner is None or event.job_id != self._runner.job_id:
             return
+        if event.state == "downloading":
+            download = event.download or {}
+            total = download.get("total")
+            self.progress.setRange(0, 1000 if total else 0)
+            self.progress.setValue(int(event.percent * 10))
+            self.status_label.setText(f"Downloading the model first: {download.get('label', '')}")
+            self.stats_label.setText(download.get("text", ""))
+            self.stages_label.clear()
+            return
         waiting = event.state in ("probing", "planning") and event.frames_done == 0
-        # Busy animation while planning (downloads, one-time TensorRT engine builds): never look frozen.
+        # Busy animation while planning (one-time TensorRT engine builds): never look frozen.
         self.progress.setRange(0, 0 if waiting else 1000)
         self.progress.setValue(int(event.percent * 10))
         labels = {"probing": "Reading the input", "planning": "Planning", "running": "Processing",
@@ -733,6 +916,9 @@ class MainWindow(QMainWindow):
         self._runner = None
         self.result = result
         self._set_running(False)
+        self._update_model_status()  # a job may have downloaded its model
+        if self.models_window is not None:
+            self.models_window.refresh()
         if state == "done" and result is not None:
             self.progress.setValue(1000)
             report = result.report
@@ -748,7 +934,8 @@ class MainWindow(QMainWindow):
             self.status_label.setText(summary)
             self.load_preview()
         elif state == "cancelled":
-            self.status_label.setText("Cancelled. Finished chunks are kept: Resume continues where it stopped.")
+            self.status_label.setText("Cancelled. Finished parts are kept (also a partly downloaded model): Resume "
+                                      "continues where it stopped.")
             self.resume_button.setEnabled(True)
         else:
             self.status_label.setText("Failed.")
@@ -801,6 +988,14 @@ class MainWindow(QMainWindow):
             QDesktopServices.openUrl(QUrl.fromLocalFile(str(path.parent)))
 
     def closeEvent(self, event: QCloseEvent) -> None:
+        if self.downloads.active() and self._runner is None:
+            answer = QMessageBox.question(
+                self, "Downloads running", "Models are still downloading. Stop the downloads and quit?\n"
+                "The parts already downloaded are kept and continue next time.")
+            if answer != QMessageBox.StandardButton.Yes:
+                event.ignore()
+                return
+            self.downloads.cancel_all()
         if self._runner is not None and self._job_thread is not None:
             answer = QMessageBox.question(
                 self, "Job running", "A job is running. Stop it and quit? Finished chunks are kept for resuming."
@@ -811,3 +1006,15 @@ class MainWindow(QMainWindow):
             self._runner.cancel.cancel("window closed")
             self._job_thread.join(60)
         event.accept()
+
+
+def _model_tooltip(m: Any) -> str:
+    """What a model is, its licence and where its weights come from (model list tooltip)."""
+    lines = [m.description or m.purpose, f"Scale: {m.scale}x - speed: {m.speed or 'n/a'} - licence: {m.licence}"]
+    if m.licence_restricted:
+        lines.append("Licence allows personal / non-commercial use only.")
+    if m.is_temporal:
+        lines.append("Uses neighbouring frames (video only).")
+    if m.weights is not None and not m.bundled and m.origin == "builtin":
+        lines.append(f"Downloaded the first time it is used ({(m.weights.size_bytes or 0) / 1e6:.0f} MB).")
+    return "\n".join(lines)

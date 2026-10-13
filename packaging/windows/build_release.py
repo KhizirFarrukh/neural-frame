@@ -4,11 +4,12 @@ Produces build/release/NeuralFrame-<version>-win64/ with
     NeuralFrame.exe      desktop app (double-click; no console window)
     neuralframe-cli.exe  command line (a separate name: Windows file names ignore case)
     ffmpeg/              FFmpeg 9 (checksum-pinned static build with NVENC/NVDEC)
-    models/              AI model weights (works offline from the first start; the very large transformer
-                         models are downloaded on first use instead, see `bundled` in registry.yaml)
     README.txt, licenses/
-smoke-tests that folder as a user would run it (fresh cache, bundled FFmpeg and models only), then packs
-it into a per-user installer (Inno Setup, when installed) and/or a portable zip, with SHA256SUMS.txt.
+No AI models are included by default: the app downloads each model when the user chooses it (or from its
+Models window). `--with-models` adds the models marked `bundled` in registry.yaml for offline use.
+The script smoke-tests the folder as a user would run it (fresh data folder, bundled FFmpeg; model files
+already on this computer are reused read-only, never downloaded), then packs it into a per-user installer
+(Inno Setup, when installed) and/or a portable zip, with SHA256SUMS.txt.
 
 Run from the repository root, in the development environment (CUDA PyTorch, TensorRT, PySide6 and the
 native module built), e.g.:
@@ -197,19 +198,16 @@ def add_ffmpeg(app: Path, cache: Path) -> None:
 
 
 def add_models(app: Path) -> None:
+    """--with-models: copy the models marked ``bundled`` (downloading those not on this computer yet)."""
     from neuralframe.config import load_settings
-    from neuralframe.models.download import ensure_weights
+    from neuralframe.models.library import ModelLibrary
     from neuralframe.models.registry import ModelRegistry
 
-    settings = load_settings(None)
+    library = ModelLibrary.from_settings(load_settings(None))
     for spec in ModelRegistry.load(user=False).all():
-        if spec.weights is None:
+        if spec.weights is None or not spec.bundled:
             continue
-        if not spec.bundled:
-            size = (spec.weights.size_bytes or 0) / 1e6
-            print(f"  {spec.id}: downloaded on first use ({size:.0f} MB, {spec.licence})")
-            continue
-        src = ensure_weights(spec, settings.paths.models())
+        src = library.ensure(spec)
         dst = app / "models" / spec.id / spec.weights.filename
         dst.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, dst)
@@ -285,6 +283,19 @@ def add_docs(app: Path, version: str, found: dict[str, str]) -> None:
 # ---- smoke test ----------------------------------------------------------------------------------------------
 
 
+def developer_models_dir() -> Path:
+    from neuralframe.config import load_settings
+
+    return load_settings(None).paths.models()
+
+
+def model_available(model_id: str, models_dir: Path) -> bool:
+    from neuralframe.models.library import ModelLibrary
+    from neuralframe.models.registry import ModelRegistry
+
+    return ModelLibrary(models_dir).is_ready(ModelRegistry.load(user=False).get(model_id))
+
+
 def smoke_test(app: Path, version: str, args: argparse.Namespace) -> dict[str, object]:
     """Run the packaged executables like a user: fresh cache (so bundled models and a fresh TensorRT engine
     are used), bundled FFmpeg only."""
@@ -294,6 +305,12 @@ def smoke_test(app: Path, version: str, args: argparse.Namespace) -> dict[str, o
         tmp = Path(tmp_s)
         env = {**os.environ, "NEURALFRAME_PATHS__CACHE_DIR": str(tmp / "cache"), "QT_QPA_PLATFORM": "offscreen",
                "PATH": os.environ.get("SYSTEMROOT", r"C:\Windows") + r"\System32"}  # no developer tools on PATH
+        # Model files already on this computer are found read-only, like a user's own folder: nothing is
+        # downloaded by the test. Checks whose model is not here are skipped (and reported).
+        dev_models = developer_models_dir()
+        env["NEURALFRAME_PATHS__MODEL_SEARCH_PATHS"] = json.dumps([str(dev_models)])
+        have = {m for m in ("realesr-animevideov3", "bsrgan-x4", "rife-4.22") if model_available(m, dev_models)}
+        results["skipped"] = sorted({"realesr-animevideov3", "bsrgan-x4", "rife-4.22"} - have)
         env.pop("NEURALFRAME_FFMPEG", None)
         env.pop("NEURALFRAME_FFPROBE", None)
 
@@ -327,7 +344,7 @@ def smoke_test(app: Path, version: str, args: argparse.Namespace) -> dict[str, o
         run(str(cli), "upscale", str(clip), "-o", str(out_l), "-m", "lanczos", "--target", "x2", "-y")
         results["lanczos"] = report(out_l)["output"]
         cuda = bool(results["gpu"])
-        if cuda and not args.no_models:
+        if cuda and "realesr-animevideov3" in have:
             out_a = tmp / "anime.mkv"
             run(str(cli), "upscale", str(clip), "-o", str(out_a), "-m", "realesr-animevideov3", "--target", "x2",
                 "-y")
@@ -337,13 +354,16 @@ def smoke_test(app: Path, version: str, args: argparse.Namespace) -> dict[str, o
                                  "fps": rep["throughput"]["pipeline_fps"]}  # type: ignore[index]
             if args.tensorrt:
                 assert runner.get("backend") == "tensorrt", f"expected TensorRT, got {runner.get('backend')}"
+        if cuda and "bsrgan-x4" in have:
             # A model loaded through spandrel (PyTorch only): checks the frozen spandrel/torchvision.
             out_b = tmp / "bsrgan.mkv"
             run(str(cli), "upscale", str(clip), "-o", str(out_b), "-m", "bsrgan-x4", "--target", "x2", "-y")
             results["spandrel"] = report(out_b)["throughput"]["pipeline_fps"]  # type: ignore[index]
         choice = json.loads(run(str(cli), "recommend", str(clip), "--json").stdout)
         results["recommend"] = {"model": choice["model"], "content": choice["profile"]["content"]}
-        if not args.no_models:
+        listed = json.loads(run(str(cli), "models", "list", "--json").stdout)
+        results["models_listed"] = len(listed)
+        if "rife-4.22" in have:
             out_f = tmp / "fg.mkv"
             run(str(cli), "interpolate", str(clip), "-o", str(out_f), "--fps", "60", "-y")
             results["framegen"] = report(out_f)["framegen"]["runtime"]  # type: ignore[index]
@@ -355,12 +375,16 @@ def smoke_test(app: Path, version: str, args: argparse.Namespace) -> dict[str, o
             print(json.dumps(gui, indent=2))
             raise SystemExit("GUI self-test failed")
         results["gui"] = {k: gui.get(k) for k in ("ffmpeg", "torch", "cuda", "gpu", "tensorrt", "spandrel",
-                                                  "sample_info", "auto_model")}
+                                                  "sample_info", "auto_model", "model_manager_rows")}
+        if (gui.get("model_manager_rows") or 0) < 60:
+            raise SystemExit(f"the Models window lists only {gui.get('model_manager_rows')} models")
         if not gui.get("spandrel"):
             raise SystemExit(f"spandrel is not usable in the package: {gui.get('spandrel_error')}")
         missing = [m for m, ok in gui.get("models_available", {}).items() if not ok]
-        if missing and not args.no_models:
+        if missing and args.with_models:
             raise SystemExit(f"models missing in the package: {missing}")
+        if results["skipped"]:
+            print(f"  note: model checks skipped (model not on this computer): {', '.join(results['skipped'])}")
     return results
 
 
@@ -407,7 +431,9 @@ def main() -> None:
                         help="TensorRT GPU architectures to ship (consumer = GeForce RTX 20/30/40/50 + PTX)")
     parser.add_argument("--with-onnxruntime", dest="onnxruntime", action="store_true",
                         help="also ship ONNX Runtime (not needed on NVIDIA; TensorRT/PyTorch are used)")
-    parser.add_argument("--no-models", action="store_true", help="do not bundle weights (downloaded on first use)")
+    parser.add_argument("--with-models", action="store_true",
+                        help="include the models marked `bundled` (default: none; the app downloads models when "
+                        "they are chosen)")
     parser.add_argument("--skip-tests", action="store_true")
     parser.add_argument("--zip", action="store_true", help="also create a portable zip")
     parser.add_argument("--no-installer", action="store_true")
@@ -432,7 +458,7 @@ def main() -> None:
     app = run_pyinstaller(args, name, icon, version_txt, work)
     step("adding FFmpeg")
     add_ffmpeg(app, ROOT / "build" / "release-cache")
-    if not args.no_models:
+    if args.with_models:
         step("adding model weights")
         add_models(app)
     step("removing build-time files")
@@ -445,7 +471,7 @@ def main() -> None:
     print(f"  application folder: {final} ({gb(folder_size(final))})")
 
     if not args.skip_tests:
-        step("smoke-testing the packaged application (fresh cache, bundled FFmpeg/models only)")
+        step("smoke-testing the packaged application (fresh data folder, bundled FFmpeg, no downloads)")
         results = smoke_test(final, version, args)
         (out / f"{name}-smoke-test.json").write_text(json.dumps(results, indent=2, default=str), encoding="utf-8")
         print(json.dumps(results, indent=2, default=str))

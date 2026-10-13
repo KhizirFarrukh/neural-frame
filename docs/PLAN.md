@@ -317,6 +317,24 @@ it builds; never add AI attribution anywhere; push only when asked.
   `.safetensors` and `.ckpt` are accepted, never `.pt` (spandrel opens those as TorchScript, which can
   carry code). A broken user `models.yaml` is skipped entry by entry instead of breaking every command.
 
+### Findings from Milestone 11 (code; no downloads, no GPU)
+
+- OpenModelDB publishes licence, architecture, scale, size and SHA256 for 671 models; 212 are 2x+ colour
+  upscalers spandrel can load with a direct download link. Spandrel 0.4.2 has no SRFormer, so SRFormer
+  models were left out; one 2x ESRGAN variant (pixel-unshuffle) needs inputs that are multiples of 4 and
+  DRCT needs 16 - the size guard pads any spandrel network to what it reports instead of trusting the
+  registry.
+- RealPLKSR, RCAN and the DAT/HAT/ATD/SwinIR/RGT families report no FP16 support in spandrel (BF16 is
+  fine); AuraSR supports neither FP16 nor BF16, so the registry gained `bf16` and the backends fall back to
+  FP32 for it. AuraSR is trained on 64 px patches: `max_tile` caps its tiles.
+- `neuralframe models download` with no names used to fetch every model; with 65 models that is 5.2 GB,
+  so it now needs names or an explicit `--all` (the error states the total).
+- Hashing a 2.5 GB file takes seconds: status displays (desktop app, web, `models list`) trust a file of
+  the right size until it is used; jobs always verify (cached per path, size and modification time).
+- Linking an identical copy of a model must not change its identity (an earlier version gave it a new URL
+  and file name, which would have rebuilt TensorRT engines); only a different file changes the weights in
+  the job's model spec.
+
 ### Research: upscalers for very low-quality sources and generative restoration (2026-10-13)
 
 What exists (sources checked 2026-10-13; licences from the projects' own pages where stated):
@@ -504,41 +522,41 @@ SwiftVR and the image models above are excluded or optional because of their lic
 ### M11 — Model library: plain-language names, many more models, downloads on demand
 Planned 2026-10-13 from section 1.3. Order of work: plan -> registry/naming -> download manager ->
 model manager UI -> CLI/web -> build changes -> tests -> docs.
-- [ ] Registry: `purpose` (plain words) and `category` for every model; one label format everywhere:
+- [x] Registry: `purpose` (plain words) and `category` for every model; one label format everywhere:
       `purpose - speed (id)`; lists grouped by category; ids accepted case-insensitively (`4x_UltraSharpV2`)
-- [ ] ~50 more models from OpenModelDB and Hugging Face, checksum-pinned, licences recorded; non-commercial
+- [x] 52 more models (65 AI upscalers in total) from OpenModelDB and Hugging Face, checksum-pinned, licences recorded; non-commercial
       ones marked "personal use only"; none chosen automatically until measured (rank 0)
-- [ ] Any model loaded through spandrel pads its input to the size multiple / minimum the network needs
+- [x] Any model loaded through spandrel pads its input to the size multiple / minimum the network needs
       (some 2x ESRGAN variants need multiples of 4, DRCT of 16), so registry entries cannot get it wrong
-- [ ] Download manager (`models/library.py`): status per model (not downloaded / downloaded / linked local
+- [x] Download manager (`models/library.py`): status per model (not downloaded / downloaded / linked local
       file / update available), streamed download with progress events (bytes, total, speed, ETA),
       cancellation, partial-file cleanup, SHA256 check, delete, disk usage
-- [ ] Jobs download a missing model first (also when automatic choice picked it) and report it as a
+- [x] Jobs download a missing model first (also when automatic choice picked it) and report it as a
       "downloading model" stage with bytes / speed / time left; cancelling the job cancels the download
-- [ ] Local files: link a file the user already has (`models link ID FILE`, "Use a file I have..." in the
+- [x] Local files: link a file the user already has (`models link ID FILE`, "Use a file I have..." in the
       manager); exact checksum = verified copy, otherwise accepted only if it loads as the same kind of
       network and scale ("local file, different version"); `models.search_paths` setting for folders
       to look in
-- [ ] Updates: for models hosted as Hugging Face files or GitHub release assets, compare the published
+- [x] Updates: for models hosted as Hugging Face files or GitHub release assets, compare the published
       SHA256 with the installed one; "Check for updates" / "Update" in the manager, `models check-updates`
       / `models update` on the command line; updated pins stored per user, never edited into the registry
-- [ ] Desktop app: Models menu -> Model manager window (search box, category filter, per-row status, size,
+- [x] Desktop app: Models menu -> Model manager window (search box, category filter, per-row status, size,
       Download / Cancel / Delete / Use a file I have... / Update, per-row progress bar with details, total
       disk use, "Check for updates"); the main window says when the selected model still has to be
       downloaded (size) and offers "Download now"; the job progress shows the download first
-- [ ] User friendliness: plain-language labels and tooltips everywhere, licence notices, clear errors with
+- [x] User friendliness: plain-language labels and tooltips everywhere, licence notices, clear errors with
       a retry (offline, disk full, checksum), sizes before downloading, nothing technical required
-- [ ] Command line: `models list` grouped by purpose with status; `models download/delete/link/unlink/
+- [x] Command line: `models list` grouped by purpose with status; `models download/delete/link/unlink/
       check-updates/update`; rich progress bars
-- [ ] Web UI: grouped plain-language model list; job progress shows the model download
-- [ ] Windows release: no models unless `--with-models`; the smoke test uses the developer's model folder
+- [x] Web UI: grouped plain-language model list; job progress shows the model download
+- [x] Windows release: no models unless `--with-models`; the smoke test uses the developer's model folder
       read-only through `models.search_paths` (skips neural checks when a model is missing) instead of
       downloading
-- [ ] Tests (CPU only, local `file://` "downloads" of tiny models): progress, cancel, checksum failure,
+- [x] Tests (CPU only, local `file://` "downloads" of tiny models): progress, cancel, checksum failure,
       link/unlink, search paths, update check against mocked APIs, manager window, job download stage
-- [ ] Docs: README (model manager, downloads, local files, updates, model list by purpose), model cards
+- [x] Docs: README (model manager, downloads, local files, updates, model list by purpose), model cards
       for every new model, packaged README.txt
-- [ ] Research write-up (generative upscalers for very low-quality sources) and a recommendation for M12
+- [x] Research write-up (generative upscalers for very low-quality sources) and a recommendation for M12
 - [ ] Later, with the user's OK for GPU work: measure the new models, calibrate ranks so automatic choice
       can use them; full gate; release and Docker build tests (delete the Docker image afterwards)
 

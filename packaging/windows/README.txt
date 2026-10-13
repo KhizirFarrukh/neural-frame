@@ -12,9 +12,10 @@ WHAT YOU NEED
 * Recommended: an NVIDIA graphics card (GeForce RTX 20 series or newer) with an up-to-date driver
   (version 580 or newer; get it from https://www.nvidia.com/drivers or the NVIDIA App).
   Without one, NeuralFrame still works on the processor, but neural upscaling is very slow.
-* Free disk space: about 6 GB for the program, plus room for your output files (4K videos are large).
-* Internet: not needed, except the first time you use one of the largest models (see "Models" below),
-  which are downloaded then (80 to 250 MB each) and kept for later.
+* Free disk space: about 6 GB for the program, plus room for the models you download (most are 3 to
+  250 MB) and for your output files (4K videos are large).
+* Internet: only to download a model the first time you choose it (see "Models" below). After that
+  everything works offline.
 
 
 HOW TO USE IT
@@ -28,25 +29,43 @@ HOW TO USE IT
      Both               - both of the above
    Pictures can only be upscaled.
 4. Check "Save as" (the result goes next to the original by default) and press Start.
+   If the model is not on your computer yet, it is downloaded first - the progress bar shows how much,
+   how fast and how long it takes - then the work starts.
 5. Watch the progress bar. When it says Done, use "Open result" or "Show in folder", and compare
    before/after with the slider at the bottom.
 
 Models
-* "Automatic (analyses the video)" is the default and usually the best choice. When you open a file,
-  NeuralFrame looks at it - cartoon or filmed, grainy or clean, blocky from compression, how sharp it
-  really is - and picks the model that suits it. The line under "Model" shows the choice and why.
+* A "model" is the AI that does the upscaling. Each one is made for a kind of picture. The list shows
+  what a model is for first and its name in brackets, grouped like this:
+     Filmed video & photos
+     Old, damaged or very low quality   (phone and web videos, VHS tapes, compressed TV recordings)
+     Cartoons & anime
+     AI images & digital art
+     Games, textures & pixel art
+     Text, documents & comics
+     Plain resizing (no AI)
+* "Automatic" is the default and usually the best choice. When you open a file, NeuralFrame looks at
+  it - cartoon or filmed, grainy or clean, blocky from compression, how sharp it really is - and picks
+  the model that suits it. The line under "Model" shows the choice and why.
 * "Preset" decides how much time you are willing to spend:
      fast      - only the quick models (good for long videos or a first look)
      balanced  - quick to slow models (the default)
      quality   - also the very slow "transformer" models (HAT-L, DRCT-L, DAT2, ATD, SwinIR-L), which
                  create the most convincing detail; expect them to take many times longer
-* You can also pick a model yourself. In the list, "fast", "medium", "slow" and "very-slow" say how
-  long it takes; hover over a model to read what it is good at.
+* You can also pick a model yourself. "fast", "medium", "slow" and "very slow" say how long it takes;
+  hover over a model to read what it is good at. "[personal use only]" means its licence does not
+  allow commercial use.
+* Models are NOT included in the download of this program: each model is downloaded the first time
+  you choose it. The line under "Model" says whether it is already on your computer ("Download now"
+  gets it straight away).
+* "Models..." (or the Models menu, Ctrl+M) opens the model manager: search for a model, see which ones
+  you have, download them ahead of time (with a progress bar and a Cancel button), delete them to free
+  space, check for updates, or use a model file you already have ("Use a file I have...").
 * Upscaling cannot bring back detail that was never recorded: the models draw new, believable detail
   (skin, hair, fabric, edges). On very blurry or tiny videos the result looks cleaner and sharper, but
   not like a real 4K recording.
-* "Add model..." lets you use a model file you downloaded yourself (for example from openmodeldb.info,
-  .pth or .safetensors files). It is checked, copied and then appears in the list.
+* Models menu > "Add your own model file..." lets you use a new model you found yourself (for example
+  on openmodeldb.info, .pth or .safetensors files). It is checked, copied and then appears in the list.
 
 Tips
 * The FIRST time you use a model on your graphics card, NeuralFrame optimises it for your card. This
@@ -80,7 +99,8 @@ menu). Examples:
 Run "neuralframe-cli.exe --help" for everything.
 
 Data NeuralFrame keeps on your computer (safe to delete; it is rebuilt when needed):
-    %LOCALAPPDATA%\neuralframe   (downloaded and optimised models, temporary files, logs)
+    %LOCALAPPDATA%\neuralframe   (downloaded and optimised models, temporary files, logs; the Models
+                                 window shows how much space the models use and can delete them)
     %APPDATA%\neuralframe        (models you added yourself: models.yaml)
 
 

@@ -21,7 +21,7 @@ from sqlalchemy.orm import DeclarativeBase, Mapped, Session, mapped_column
 
 from neuralframe.core.job import JobSpec
 
-ACTIVE_STATES = ("probing", "planning", "running", "muxing", "verifying")
+ACTIVE_STATES = ("probing", "planning", "downloading", "running", "muxing", "verifying")
 TERMINAL_STATES = ("done", "failed", "cancelled")
 RESUMABLE_STATES = ("failed", "cancelled", "paused")
 

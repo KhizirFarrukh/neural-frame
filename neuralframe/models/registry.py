@@ -17,6 +17,20 @@ Speed = Literal["fast", "medium", "slow", "very-slow"]
 ContentKind = Literal["live-action", "animation"]
 Degradation = Literal["noise", "compression", "blur"]
 Backend = Literal["tensorrt", "onnxruntime", "torch"]
+Category = Literal["filmed", "damaged", "animation", "ai-art", "games", "text", "classical"]
+
+# Headings for the model lists, in display order (models without a category go last, as "Your models").
+CATEGORY_TITLES: dict[str, str] = {
+    "filmed": "Filmed video & photos",
+    "damaged": "Old, damaged or very low quality",
+    "animation": "Cartoons & anime",
+    "ai-art": "AI images & digital art",
+    "games": "Games, textures & pixel art",
+    "text": "Text, documents & comics",
+    "classical": "Plain resizing (no AI)",
+}
+USER_CATEGORY_TITLE = "Your models"
+SPEED_WORDS = {"fast": "fast", "medium": "medium", "slow": "slow", "very-slow": "very slow"}
 
 
 class WeightsSpec(BaseModel):
@@ -57,6 +71,8 @@ class ModelSpec(BaseModel):
     are PyTorch-only: their window attention is not validated for ONNX/TensorRT export at other sizes."""
     fp16: bool = True
     """False: the network overflows in FP16 and runs in bfloat16 (or FP32 where bfloat16 is missing)."""
+    bf16: bool = True
+    """False: the network does not work in bfloat16 either (FP32 only)."""
     memory_per_pixel: int | None = Field(default=None, ge=1)
     """Planning estimate of activation memory in bytes per input pixel at 16-bit precision."""
     bundled: bool = True
@@ -72,6 +88,23 @@ class ModelSpec(BaseModel):
     """Best on still images (less steady between video frames); automatic choice prefers others for video."""
     origin: Literal["builtin", "user"] = "builtin"
     """``user`` for models added with ``neuralframe models add``."""
+    purpose: str = ""
+    """What it is for, in plain words (shown before the id in every model list)."""
+    category: Category | None = None
+    """Group in the model lists (see :data:`CATEGORY_TITLES`)."""
+    max_tile: int | None = Field(default=None, ge=16)
+    """Largest input tile the model works well on (e.g. networks trained on fixed small patches)."""
+
+    @property
+    def label(self) -> str:
+        """``purpose - speed (id)``: understandable without knowing models, findable by name."""
+        purpose = self.purpose or ("Your model" if self.origin == "user" else self.description.split(".")[0])
+        speed = f" - {SPEED_WORDS[self.speed]}" if self.speed else ""
+        return f"{purpose}{speed} ({self.id})"
+
+    @property
+    def category_title(self) -> str:
+        return CATEGORY_TITLES[self.category] if self.category else USER_CATEGORY_TITLE
 
     @property
     def is_classical(self) -> bool:
@@ -112,20 +145,38 @@ class ModelRegistry:
         return cls(specs)
 
     def get(self, model_id: str) -> ModelSpec:
-        try:
-            return self._models[model_id]
-        except KeyError:
+        spec = self._models.get(model_id)
+        if spec is None:  # names as people write them: 4x-UltraSharpV2, 4x_UltraSharpV2, ...
+            wanted = _normalise(model_id)
+            spec = next((m for m in self._models.values() if _normalise(m.id) == wanted), None)
+        if spec is None:
             raise NeuralFrameError(
                 ErrorCode.MODEL_UNAVAILABLE,
                 f"unknown model {model_id!r}",
-                hint=f"available: {', '.join(sorted(self._models))}",
-            ) from None
+                hint="`neuralframe models list` shows every model with what it is for",
+            )
+        return spec
+
+    def grouped(self, *, kinds: tuple[str, ...] = ("sr", "classical")) -> list[tuple[str, list[ModelSpec]]]:
+        """Models by category in display order (for lists people choose from)."""
+        order = list(CATEGORY_TITLES)
+        groups: dict[str, list[ModelSpec]] = {}
+        for m in self._models.values():
+            if m.kind in kinds:
+                groups.setdefault(m.category_title, []).append(m)
+        titles = sorted(groups, key=lambda t: next((i for i, c in enumerate(order) if CATEGORY_TITLES[c] == t),
+                                                   len(order)))
+        return [(t, groups[t]) for t in titles]
 
     def all(self) -> list[ModelSpec]:
         return list(self._models.values())
 
     def of_kind(self, kind: ModelKind) -> list[ModelSpec]:
         return [m for m in self._models.values() if m.kind == kind]
+
+
+def _normalise(name: str) -> str:
+    return name.lower().replace("_", "-").replace(" ", "-")
 
 
 def user_registry_path() -> Path:
