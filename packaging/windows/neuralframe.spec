@@ -17,12 +17,15 @@ HERE = ROOT / "packaging" / "windows"
 opts = json.loads(os.environ["NF_BUILD_OPTIONS"])
 
 datas = collect_data_files("neuralframe")  # registry/presets YAML, web UI
+# Engine driver scripts are copied into engine environments at install time: ship them as files.
+datas += collect_data_files("neuralframe.engines.resources", include_py_files=True)
 native = importlib.util.find_spec("neuralframe._native")
 if native is None or native.origin is None:
     raise SystemExit("neuralframe._native is not built; run: pip install --no-build-isolation -e .")
 binaries = [(native.origin, "neuralframe")]
 hiddenimports = [
-    *collect_submodules("neuralframe", filter=lambda name: not name.startswith("neuralframe.testing.")),
+    *collect_submodules("neuralframe", filter=lambda name: not name.startswith(
+        ("neuralframe.testing.", "neuralframe.engines.resources."))),
     "neuralframe.testing.media",
     *collect_submodules("uvicorn"),
     "sqlalchemy.dialects.sqlite",

@@ -70,14 +70,16 @@ def test_models_are_listed_by_what_they_are_for(window: MainWindow) -> None:
     manager = window.open_model_manager()
     manager.confirm = False
     titles = [manager.tree.topLevelItem(i).text(0) for i in range(manager.tree.topLevelItemCount())]
-    assert titles[:2] == ["Filmed video & photos", "Old, damaged or very low quality"]
+    assert titles[:3] == ["Generative restoration (invents detail, very slow)", "Filmed video & photos",
+                          "Old, damaged or very low quality"]
+    assert titles[-1] == "Face restoration"
     manager.search.setText("vhs")
     visible = [mid for mid, (item, _row) in manager._rows.items() if not item.isHidden()]
     assert visible == ["2x-vhs2hd"]
     manager.search.clear()
     manager.show_combo.setCurrentIndex(manager.show_combo.findData("ready"))
     assert all(item.isHidden() for mid, (item, _row) in manager._rows.items()
-               if mid not in ("lanczos", "bicubic"))  # nothing downloaded in a fresh models folder
+               if mid not in ("lanczos", "bicubic"))  # nothing downloaded or installed in a fresh models folder
 
 
 def test_download_from_the_manager_then_delete(qtbot: Any, window: MainWindow, remote: ModelSpec) -> None:

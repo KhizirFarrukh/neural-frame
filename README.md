@@ -33,7 +33,8 @@ runs on your own computer; nothing is uploaded anywhere.
 4. [Install from source on Linux](#4-install-from-source-on-linux)
 5. [Using NeuralFrame](#5-using-neuralframe) - desktop app, command line, web interface, configuration,
    [models](#55-models-which-one-and-what-to-expect),
-   [getting models](#56-getting-models-downloads-files-you-already-have-updates)
+   [getting models](#56-getting-models-downloads-files-you-already-have-updates),
+   [generative restoration](#57-generative-restoration-and-face-restoration-engines)
 6. [Build the Windows app yourself](#6-build-the-windows-app-yourself)
 7. [Docker](#7-docker)
 8. [Supported hardware](#8-supported-hardware) - [Performance](#9-performance) -
@@ -511,6 +512,8 @@ not know the models, or by name if you do (names work in any spelling: `-m 4x_Ul
 | Games, textures & pixel art | old game textures (`4x-pbrify-v4`); pixel art (`8x-ms-unpainter`) |
 | Text, documents & comics | blurry text and screenshots (`2x-text2hd`); printed photos and comics without halftone dots (`4x-dwtp-ds-dat2-v3`); manga (`4x-wtp-uds-esrgan`) |
 | Plain resizing (no AI) | `lanczos`, `bicubic` |
+| Generative restoration | SeedVR2, FlashVSR, DOVE, SwiftVR, NVIDIA RTX Video, OSEDiff, HYPIR, InvSR, SUPIR, LucidFlux - see [5.7](#57-generative-restoration-and-face-restoration-engines) |
+| Face restoration (separate option) | GFPGAN, RestoreFormer, RestoreFormer++, CodeFormer, KEEP |
 
 All 65 AI upscaling models (plus plain resizing), with sizes, licences and sources, are listed in
 [MODEL_CARDS.md](MODEL_CARDS.md).
@@ -589,6 +592,63 @@ neuralframe models delete hat-l-x4            # free the space (downloaded again
 
 A whole folder of model files you already have can be used with the setting `paths.model_search_paths`
 (see [5.4](#54-configuration)): files are found by their published file name and checked by checksum.
+
+### 5.7 Generative restoration and face restoration (engines)
+
+For **very bad sources** - 144p to 480p, heavily compressed, blurry or noisy video and photos - the model
+list has a group **Generative restoration (invents detail, very slow)**. These are diffusion and
+transformer models from recent research (2024-2026). They do not sharpen what is there; they *re-create*
+the picture at high resolution, inventing realistic detail (skin, hair, fabric, text, foliage) where the
+source has none. That is how they can turn a tiny, damaged video into something that looks like real HD or
+4K - and also why the result can differ from what was really filmed (a face can look like a slightly
+different person, small text can change). Use them where that is acceptable.
+
+| Model (name) | For | Downloads | Licence |
+|---|---|---|---|
+| SeedVR2 (`seedvr2-3b-q4`, `-3b-q8`, `-3b-fp8`, `-3b-fp16`, `-7b-...`, `-7b-sharp-...`) | the strongest video restoration; `3b-q4` is made to fit 8 GB graphics cards (it moves parts of the model to system memory), 7B and full precision need large cards | engine ~7 GB + 2.5-17 GB | Apache-2.0 |
+| FlashVSR (`flashvsr-v1.1`, `flashvsr-v1.1-tiny`) | 4x video restoration, streaming; fast on datacenter GPUs, slow elsewhere | ~8 GB + 6.5 GB | Apache-2.0 |
+| DOVE (`dove`) | 4x video restoration, very steady between frames; huge | ~7 GB + 42 GB | Apache-2.0 |
+| SwiftVR (`swiftvr`) | the quickest diffusion video restorer | ~7 GB + 20 GB | personal use only |
+| NVIDIA RTX Video (`nvidia-rtx-vsr`, `-ultra`, `-highbitrate`) | NVIDIA's driver-level video upscaler (the "DLSS for video"): fast and clean, but it does not invent much detail | ~4 GB | NVIDIA proprietary |
+| OSEDiff (`osediff`) | photos and single frames, one diffusion step | ~5 GB + 11 GB | Apache-2.0 |
+| HYPIR (`hypir`) | photos, strong realistic restoration | ~5 GB + 6 GB | personal use only |
+| InvSR (`invsr`) | photos, 1-5 diffusion steps | ~5 GB + its own downloads | personal use only |
+| SUPIR (`supir-v0q`, `supir-v0f`) | photos, the most photo-realistic detail; needs a very large GPU and lots of RAM; its checkpoint must be downloaded by hand (Google Drive/Baidu) and added with **Use a file I have...** | ~6 GB + 7 GB + checkpoint | personal use only |
+| LucidFlux (`lucidflux`) | photos, restoration on FLUX.1 (needs a Hugging Face token: see below) | ~6 GB + ~35 GB | personal use only |
+
+The picture models also run on video, frame by frame, which can flicker; the video models keep frames
+consistent. All of them need an **NVIDIA graphics card** and are **very slow** (from seconds to minutes per
+4K frame on a laptop GPU) - try a few seconds of video first.
+
+**Restore faces** (desktop app: *Restore faces* under the model; command line: `--faces NAME`) runs a face
+restorer on the finished frames: it finds faces, restores them and pastes them back. Useful for small or
+blurry faces in old footage, with any upscaling model: `gfpgan-1.4` (natural), `restoreformer`,
+`restoreformer-pp` (detailed), `codeformer` (strongest, personal use only), `keep` (video, steady between
+frames, personal use only).
+
+**How engines are installed.** Each engine is a separate research project with its own Python packages, so
+NeuralFrame installs it into **its own environment** (in `%LOCALAPPDATA%\neuralframe\engines\<engine>`)
+the first time a model that uses it is chosen - or ahead of time with **Install** in the Models window or
+`neuralframe engines install NAME`. The installer downloads a small tool (`uv`), a matching Python, PyTorch
+and the engine's code (pinned to a tested version), shows its progress and can be cancelled; nothing has to
+be installed on the computer beforehand. `neuralframe engines list` shows what is installed and how much
+space it uses; **Remove engine** / `neuralframe engines remove NAME` deletes an environment (models stay).
+
+* **Hugging Face token** (LucidFlux, which uses the gated FLUX.1-dev): create a free account on
+  huggingface.co, accept the licence on the FLUX.1-dev page, create a token (Settings > Access Tokens),
+  then enter it in the desktop app (**Models > Hugging Face token...**) or set `HF_TOKEN`.
+* **FlashVSR** needs its sparse-attention CUDA kernels for full speed; they are built when a CUDA
+  compiler (NVIDIA CUDA Toolkit) is installed, otherwise a much slower PyTorch version of the same
+  calculation is used.
+* Settings (section `engines` in the configuration): `max_output_height` (generate at most this height and
+  resize the rest), `sequence_frames` (frames per engine run), `keep_temp`, `hf_token`.
+
+```bash
+neuralframe upscale old_240p.mp4 -o restored_1080p.mkv -m seedvr2-3b-q4 --target 1080p
+neuralframe upscale family.mp4 -o family_4k.mkv -m 4x-realwebphoto-v4-dat2 --faces gfpgan-1.4
+neuralframe upscale photo.jpg -o photo_4k.png -m osediff
+neuralframe engines list
+```
 
 ---
 
@@ -880,10 +940,21 @@ frame > 55 dB). See the [gallery](docs/GALLERY.md) for crops.
 * **`... needs the spandrel package` (`MODEL_UNAVAILABLE`)** - the large models need the `models` extra:
   `pip install torchvision --index-url https://download.pytorch.org/whl/cu130` (use the same address as
   for PyTorch), then `pip install -e ".[models]"`. Automatic choice skips these models until then.
+* **An engine does not install** - the Models window and `neuralframe engines install NAME` show the step
+  that failed; the full output is in `%LOCALAPPDATA%\neuralframe\engines\<engine>\install.log`. Installing
+  again continues where it stopped. Some research projects need build tools (FlashVSR's kernels: the CUDA
+  Toolkit) or packages that are hard to get on Windows; using them on Linux (or in Docker) can help.
+* **An engine fails while processing** - its output is in `...\engines\<engine>\runs.log`. Most failures
+  are lack of graphics memory: choose a smaller variant (`seedvr2-3b-q4`), a lower output size, or set
+  `engines.max_output_height`.
 * **A very slow model is too slow** - use the `balanced` or `fast` preset, or pick a faster model; the
   report and `neuralframe recommend` show what was chosen and why.
 
 ## 11. Assumptions & limitations
+
+* The generative restoration and face restoration engines (M12) were integrated from their published code
+  without being run here yet: installation recipes and command lines follow the upstream projects at pinned
+  commits, but the first real run of each may still need fixes (see docs/PLAN.md, M12).
 
 * Only one NVIDIA GPU was available for development: multi-GPU scheduling is tested with two workers on
   one GPU; AMD/Intel/Apple paths are implemented through ONNX Runtime providers and FFmpeg encoder mappings

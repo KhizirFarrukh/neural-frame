@@ -32,6 +32,9 @@ app = typer.Typer(
 )
 models_app = typer.Typer(help="List, download, verify and export models.", no_args_is_help=True)
 app.add_typer(models_app, name="models")
+engines_app = typer.Typer(help="Generative and face restoration engines (each in its own environment).",
+                          no_args_is_help=True)
+app.add_typer(engines_app, name="engines")
 queue_app = typer.Typer(help="Submit and manage jobs on a running `neuralframe serve`.", no_args_is_help=True)
 app.add_typer(queue_app, name="queue")
 
@@ -291,6 +294,8 @@ def upscale(
     framegen_order: str | None = typer.Option(
         None, "--framegen-order", help="auto (default) | upscale_first | interpolate_first"
     ),
+    faces: str | None = typer.Option(None, "--faces", help="Also restore faces: gfpgan-1.4, restoreformer, "
+                                     "restoreformer-pp, codeformer, keep (see `models list`)."),
 ) -> None:
     """Upscale a video or image (default target: 4K, aspect ratio preserved); optionally generate frames."""
     state = _state(ctx)
@@ -301,6 +306,7 @@ def upscale(
             input=input_path,
             output=output,
             model=model,
+            faces=faces,
             target=_target(target, scale, target_height, size),
             preset=preset,
             backend=backend,
@@ -444,12 +450,21 @@ def models_list(ctx: typer.Context, as_json: bool = typer.Option(False, "--json"
     table.add_column("licence")
     table.add_column("on this computer")
     library = ModelLibrary.from_settings(_state(ctx).settings)
-    for title, models in registry.grouped():
+    for title, models in registry.grouped(kinds=("sr", "classical", "faces")):
         table.add_section()
         table.add_row(f"[bold]{title}[/]", "", "", "", "", "")
         for m in models:
             licence = m.licence + (" [yellow](personal use only)[/]" if m.licence_restricted else "")
             name = m.id + (" (added)" if m.origin == "user" else "")
+            if m.is_engine:
+                from neuralframe.engines.status import engine_model_status
+
+                es = engine_model_status(m, _state(ctx).settings, library)
+                here = "[green]installed[/]" if es.ready else f"- (about {es.download_bytes / 1e9:.1f} GB)"
+                table.add_row(f"  {m.purpose or m.label}", m.id, f"x{m.scale}" if m.kind != "faces" else "faces",
+                              SPEED_WORDS.get(m.speed or "", "-"),
+                              m.licence + (" [yellow](personal use only)[/]" if m.licence_restricted else ""), here)
+                continue
             status = library.status(m)
             here = {"builtin": "built in", "missing": "-", "installed": "[green]yes[/]", "bundled": "[green]yes[/]",
                     "found": "[green]yes[/] (found)", "linked": "[green]your file[/]",
@@ -513,7 +528,7 @@ def models_remove(
     console.print(f"removed {model_id}")
 
 
-def _download_with_bar(library: Any, spec: Any, *, update: bool = False) -> Path:
+def _download_with_bar(library: Any, spec: Any, *, update: bool = False, settings: Any = None) -> Path:
     """Download (or update) one model with a progress bar; Ctrl+C stops it and keeps the part done."""
     from rich.progress import DownloadColumn, TimeRemainingColumn, TransferSpeedColumn
 
@@ -528,6 +543,12 @@ def _download_with_bar(library: Any, spec: Any, *, update: bool = False) -> Path
 
         cancel = threading.Event()
         try:
+            if spec.is_engine:
+                from neuralframe.engines.status import install_model
+
+                bar.update(task, description="installing")
+                install_model(spec, settings, library, progress=on_progress, cancel=cancel)
+                return Path(library.folder(spec))
             if update:
                 return Path(library.apply_update(spec, progress=on_progress, cancel=cancel))
             return Path(library.ensure(spec, progress=on_progress, cancel=cancel))
@@ -559,16 +580,22 @@ def models_download(
         _fail(exc)
         return
     for spec in specs:
-        if spec.weights is None:
+        if spec.weights is None and not spec.is_engine:
             console.print(f"{spec.id}: plain resizing, nothing to download")
             continue
-        if library.is_ready(spec):
+        if spec.is_engine:
+            from neuralframe.engines.status import engine_model_status
+
+            if engine_model_status(spec, settings, library).ready:
+                console.print(f"[dim]{spec.id}: already installed[/]")
+                continue
+        elif library.is_ready(spec):
             console.print(f"[dim]{spec.id}: already on this computer[/]")
             continue
         if spec.licence_restricted:
             console.print(f"[yellow]{spec.id}: licence {spec.licence} - personal, non-commercial use only[/]")
         try:
-            path = _download_with_bar(library, spec)
+            path = _download_with_bar(library, spec, settings=settings)
         except KeyboardInterrupt:
             console.print(f"[yellow]stopped[/] {spec.id}: the part already downloaded is kept; run the command again "
                           "to continue")
@@ -784,6 +811,75 @@ def models_export(
         mx, mean, psnr = compare_outputs(ref_out, out)
         table.add_row(name, precision, f"{mx:.5f}", f"{mean:.6f}", f"{psnr:.1f}")
     console.print(table)
+
+
+@engines_app.command("list")
+def engines_list(ctx: typer.Context) -> None:
+    """Every engine, whether it is installed, and how much space it uses."""
+    from neuralframe.engines.catalog import ENGINES
+    from neuralframe.engines.env import EngineEnv
+
+    settings = _state(ctx).settings
+    table = Table(title="Engines (installed on demand, each in its own environment)", title_justify="left")
+    for col in ("engine", "what", "licence", "state", "disk"):
+        table.add_column(col)
+    for e in ENGINES.values():
+        env = EngineEnv.for_settings(e, settings)
+        state = env.state()
+        disk = f"{env.disk_usage() / 1e9:.1f} GB" if state != "missing" else f"about {e.disk_gb:.0f} GB"
+        table.add_row(e.id, e.name, e.licence + (" [yellow](personal use only)[/]" if e.restricted else ""),
+                      {"installed": "[green]installed[/]", "outdated": "[yellow]needs update[/]",
+                       "missing": "-"}[state], disk)
+    console.print(table)
+    console.print("[dim]Models that use an engine: `neuralframe models list` (Generative restoration, Face "
+                  "restoration). Installing a model installs its engine.[/]")
+
+
+@engines_app.command("install")
+def engines_install(
+    ctx: typer.Context, engine_id: str = typer.Argument(..., help="Engine (see `engines list`)."),
+) -> None:
+    """Install an engine's environment now (otherwise when a model that uses it is first chosen)."""
+    from neuralframe.engines.catalog import engine
+    from neuralframe.engines.env import EngineEnv, InstallProgress
+
+    settings = _state(ctx).settings
+    try:
+        env = EngineEnv.for_settings(engine(engine_id), settings)
+        with Progress(TextColumn(engine_id), BarColumn(), TextColumn("{task.description}"), console=console) as bar:
+            task = bar.add_task("starting", total=1000)
+
+            def on_progress(p: InstallProgress) -> None:
+                bar.update(task, completed=int(p.fraction * 1000), description=f"{p.step}: {p.message}"[:70])
+
+            cancel = threading.Event()
+            try:
+                env.install(on_progress, cancel=cancel)
+            except KeyboardInterrupt:
+                cancel.set()
+                raise
+    except KeyboardInterrupt:
+        console.print("[yellow]stopped[/]: run the command again to continue")
+        raise typer.Exit(130) from None
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    console.print(f"[green]installed[/] {engine_id} ({env.disk_usage() / 1e9:.1f} GB in {env.root})")
+
+
+@engines_app.command("remove")
+def engines_remove(ctx: typer.Context, engine_id: str = typer.Argument(...)) -> None:
+    """Delete an engine's environment (its models' files are kept)."""
+    from neuralframe.engines.catalog import engine
+    from neuralframe.engines.env import EngineEnv
+
+    try:
+        env = EngineEnv.for_settings(engine(engine_id), _state(ctx).settings)
+    except NeuralFrameError as exc:
+        _fail(exc)
+        return
+    freed = env.remove()
+    console.print(f"{engine_id}: removed ({freed / 1e9:.1f} GB freed)")
 
 
 # -------------------------------------------------------------------------------------------------------
@@ -1015,6 +1111,7 @@ def queue_add(
     fps: str | None = typer.Option(None, "--fps", help="Frame generation target (implies -i)."),
     no_upscale: bool = typer.Option(False, "--no-upscale", help="Frame generation only."),
     repair_drops: str | None = typer.Option(None, "--repair-drops", help="auto | on | off"),
+    faces: str | None = typer.Option(None, "--faces", help="Also restore faces (a face restoration model)."),
     priority: int = typer.Option(0, "--priority", help="Higher runs first."),
     overwrite: bool = typer.Option(False, "--overwrite", "-y"),
     server: str | None = typer.Option(None, "--server", help="Service URL (default from config)."),
@@ -1022,7 +1119,7 @@ def queue_add(
     """Queue a job on the service."""
     options: dict[str, Any] = {"preset": preset, "upscale": not no_upscale, "interpolate": interpolate or bool(fps),
                                "overwrite": overwrite}
-    for key, value in (("model", model), ("target_fps", fps), ("repair_drops", repair_drops)):
+    for key, value in (("model", model), ("target_fps", fps), ("repair_drops", repair_drops), ("faces", faces)):
         if value is not None:
             options[key] = value
     body = {"input": str(input_path.resolve()), "output": str(output.resolve()) if output else None,

@@ -253,7 +253,7 @@ def test_every_model_says_what_it_is_for() -> None:
         assert ("-NC" in m.licence) == m.licence_restricted, m.id
     titles = [t for t, _ in registry.grouped()]
     assert titles == [t for t in CATEGORY_TITLES.values() if t in titles]  # display order
-    assert {t for t in titles} == set(CATEGORY_TITLES.values())
+    assert set(titles) == set(CATEGORY_TITLES.values()) - {"Face restoration"}  # faces: their own selector
     assert len({m.label for m in upscalers}) == len(upscalers)
 
 

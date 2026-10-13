@@ -146,15 +146,22 @@ def create_app(settings: Settings, *, manager: JobManager | None = None, start_w
         result = []
         for m in ModelRegistry.load().all():
             status = library.status(m)
-            present = status.ready
+            present, status_text, state = status.ready, status.text(), status.state
+            if m.is_engine:
+                from neuralframe.engines.status import engine_model_status
+
+                es = engine_model_status(m, settings, library)
+                present, status_text = es.ready, es.text()
+                state = "installed" if es.ready else "missing"
             result.append({
                 **m.model_dump(mode="json"),
                 "label": m.label,
                 "category_title": m.category_title if m.kind != "interpolation" else "Frame generation",
                 "category_order": list(CATEGORY_TITLES).index(m.category) if m.category else len(CATEGORY_TITLES),
                 "weights_present": present,
-                "status": status.state,
-                "status_text": status.text(),
+                "status": state,
+                "status_text": status_text,
+                "download_bytes": m.download_bytes,
                 "engines": [e.name for e in engines if e.name.startswith(f"{m.id}-")],
             })
         return result

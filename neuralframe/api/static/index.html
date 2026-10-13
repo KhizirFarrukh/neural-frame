@@ -121,6 +121,10 @@
         <label for="model">Model</label>
         <select id="model"><option value="">Automatic: picks the right model for your video (auto)</option></select>
       </div>
+      <div id="facesOpts">
+        <label for="faces">Restore faces</label>
+        <select id="faces"><option value="">Off</option></select>
+      </div>
       <div>
         <label for="preset">Preset</label>
         <select id="preset"></select>
@@ -243,14 +247,22 @@ async function loadSystem() {
     const models = await api("GET", "/v1/models");
     const groups = new Map();  // category heading -> <optgroup>
     const order = new Map();
-    for (const m of models.filter(m => m.kind !== "interpolation")) {
+    for (const m of models.filter(m => m.kind === "faces")) {
+      const o = document.createElement("option"); o.value = m.id;
+      o.textContent = m.label + (m.licence_restricted ? "  [personal use only]" : "");
+      o.title = m.description || "";
+      $("faces").appendChild(o);
+    }
+    for (const m of models.filter(m => m.kind !== "interpolation" && m.kind !== "faces")) {
       order.set(m.category_title, m.category_order);
       if (!groups.has(m.category_title)) {
         const g = document.createElement("optgroup"); g.label = m.category_title;
         groups.set(m.category_title, g);
       }
       const o = document.createElement("option"); o.value = m.id;
-      const download = !m.weights_present && m.weights ? `download ${Math.round((m.weights.size_bytes || 0) / 1e6)} MB` : null;
+      const size = m.engine ? `install about ${(m.download_bytes / 1e9).toFixed(1)} GB + engine`
+                            : `download ${Math.round((m.download_bytes || 0) / 1e6)} MB`;
+      const download = !m.weights_present && (m.weights || m.engine) ? size : null;
       const marks = [download, m.licence_restricted ? "personal use only" : null, m.origin === "user" ? "added" : null].filter(Boolean);
       o.textContent = m.label + marks.map(x => `  [${x}]`).join("");
       o.title = `${m.description || ""}\nLicence: ${m.licence}\n${m.status_text || ""}`;
@@ -318,6 +330,7 @@ function setMode(mode) {
   const up = mode !== "framegen", fg = mode !== "upscale";
   $("upscaleOpts").classList.toggle("hidden", !up);
   $("modelOpts").classList.toggle("hidden", !up);
+  $("facesOpts").classList.toggle("hidden", !up);
   $("fpsOpts").classList.toggle("hidden", !fg);
   $("dropOpts").classList.toggle("hidden", !fg);
 }
@@ -330,6 +343,7 @@ $("start").addEventListener("click", async () => {
   const up = state.mode !== "framegen", fg = state.mode !== "upscale";
   const options = { preset: $("preset").value || "balanced", upscale: up, interpolate: fg };
   if (up && $("model").value) options.model = $("model").value;
+  if (up && $("faces").value) options.faces = $("faces").value;
   if (fg) {
     options.target_fps = $("fps").value === "custom" ? $("customFps").value.trim() : $("fps").value;
     options.repair_drops = $("repair").value;

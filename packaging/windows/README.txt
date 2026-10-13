@@ -64,6 +64,12 @@ Models
 * Upscaling cannot bring back detail that was never recorded: the models draw new, believable detail
   (skin, hair, fabric, edges). On very blurry or tiny videos the result looks cleaner and sharper, but
   not like a real 4K recording.
+* For VERY bad videos and photos (tiny, blurry, heavily compressed), the group "Generative restoration"
+  has research models (SeedVR2, FlashVSR, DOVE, OSEDiff, SUPIR...). They re-create the picture and invent
+  realistic detail, so the result can differ from what was really filmed. They need an NVIDIA card, are
+  very slow, and install a separate engine (several GB) the first time you use one - the program asks
+  first and shows the progress. "seedvr2-3b-q4" is the one made for 8 GB graphics cards.
+* "Restore faces" (under the model) restores small or blurry faces in the result.
 * Models menu > "Add your own model file..." lets you use a new model you found yourself (for example
   on openmodeldb.info, .pth or .safetensors files). It is checked, copied and then appears in the list.
 

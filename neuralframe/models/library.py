@@ -59,6 +59,8 @@ class DownloadProgress:
     total: int | None
     speed_bps: float
     eta_s: float | None
+    message: str = ""
+    """Instead of byte counts (engine installation steps)."""
 
     @property
     def fraction(self) -> float | None:
@@ -66,6 +68,8 @@ class DownloadProgress:
 
     def text(self) -> str:
         """``45.2 of 140.0 MB - 5.1 MB/s - about 19 s left``"""
+        if self.message:
+            return self.message
         done = f"{self.done / 1e6:.1f}" + (f" of {self.total / 1e6:.1f} MB" if self.total else " MB")
         parts = [done]
         if self.speed_bps > 0:
@@ -141,24 +145,39 @@ def sha256_of(path: Path) -> str:
     return digest.hexdigest()
 
 
+def git_blob_sha1(path: Path) -> str:
+    """Git's id of a file's content (``blob <size>\\0<bytes>``), which Hugging Face lists for small files."""
+    digest = hashlib.sha1(f"blob {path.stat().st_size}\0".encode(), usedforsecurity=False)
+    with path.open("rb") as fh:
+        while block := fh.read(1 << 20):
+            digest.update(block)
+    return digest.hexdigest()
+
+
 class ModelLibrary:
     """Model files for one models folder (thread-safe; one instance can serve several downloads)."""
 
     STATE_FILE = "library.json"
 
     def __init__(self, models_dir: Path, *, search_paths: list[Path] | tuple[Path, ...] = (),
-                 timeout_s: float = 60.0, transport: httpx.BaseTransport | None = None) -> None:
+                 timeout_s: float = 60.0, transport: httpx.BaseTransport | None = None,
+                 hf_token: str | None = None) -> None:
         self.models_dir = Path(models_dir)
         self.search_paths = [Path(p) for p in search_paths]
         self.timeout_s = timeout_s
         self.transport = transport
         """HTTP transport override (tests); None = the network."""
+        self.hf_token = hf_token
+        """Hugging Face access token for gated files (sent only to huggingface.co)."""
         self._lock = threading.RLock()
         self._busy: set[str] = set()
 
     @classmethod
     def from_settings(cls, settings: Settings) -> ModelLibrary:
-        return cls(settings.paths.models(), search_paths=list(settings.paths.model_search_paths))
+        from neuralframe.engines.secrets import hf_token
+
+        return cls(settings.paths.models(), search_paths=list(settings.paths.model_search_paths),
+                   hf_token=hf_token(settings))
 
     # ---- persistent state --------------------------------------------------------------------------------
 
@@ -206,6 +225,29 @@ class ModelLibrary:
             self._save(data)
         return actual == sha256
 
+    def _file_ok(self, path: Path, w: WeightsSpec, *, quick: bool = False) -> bool:
+        """A file matches its spec: SHA256 when published, else git blob id, else the size (the SHA256 of
+        the first download is then remembered and checked from then on)."""
+        if w.sha256:
+            return self._matches(path, w.sha256, w.size_bytes, quick=quick)
+        try:
+            size = path.stat().st_size
+        except OSError:
+            return False
+        if w.size_bytes is not None and size != w.size_bytes:
+            return False
+        key = f"tofu:{path.resolve()}"
+        remembered = self._state()["verified"].get(key)
+        if remembered and not quick:
+            return self._matches(path, remembered, w.size_bytes)
+        if w.git_sha1 and not quick:
+            return git_blob_sha1(path) == w.git_sha1
+        return True
+
+    def folder(self, spec: ModelSpec) -> Path:
+        """Where a model's files are kept (models of one engine share a folder)."""
+        return self.models_dir / (spec.files_dir or spec.id)
+
     # ---- what is installed -------------------------------------------------------------------------------
 
     def weights(self, spec: ModelSpec) -> WeightsSpec:
@@ -234,28 +276,54 @@ class ModelLibrary:
         return spec if weights == spec.weights else spec.model_copy(update={"weights": weights})
 
     def target_path(self, spec: ModelSpec) -> Path:
-        return self.models_dir / spec.id / self.weights(spec).filename
+        return self.folder(spec) / self.weights(spec).filename
+
+    def files(self, spec: ModelSpec) -> list[WeightsSpec]:
+        """Every file the model needs (the main one with any installed update, then the extra files)."""
+        return ([self.weights(spec)] if spec.weights else []) + list(spec.extra_weights)
+
+    def missing_files(self, spec: ModelSpec, *, quick: bool = True) -> list[WeightsSpec]:
+        """Extra files (VAE, configs...) not in the model's folder yet."""
+        from neuralframe.bundle import bundled
+
+        missing = []
+        for w in spec.extra_weights:
+            path = self.folder(spec) / w.filename
+            shipped = bundled("models", spec.files_dir or spec.id, w.filename)
+            if not (path.is_file() and self._file_ok(path, w, quick=quick)) and not (
+                    shipped is not None and self._file_ok(shipped, w, quick=quick)):
+                missing.append(w)
+        return missing
 
     def locate(self, spec: ModelSpec, *, quick: bool = False) -> tuple[State, Path | None]:
-        """Where the model's file is (``quick``: without hashing files not checked before)."""
+        """Where the model's (main) file is (``quick``: without hashing files not checked before). A model
+        with extra files counts as missing until all of them are there."""
         if spec.weights is None:
             return "builtin", None
+        if spec.extra_weights and self.missing_files(spec, quick=quick):
+            return "missing", None
+        return self._locate_main(spec, quick=quick)
+
+    def _locate_main(self, spec: ModelSpec, *, quick: bool = False) -> tuple[State, Path | None]:
+        assert spec.weights is not None
         weights = self.weights(spec)
-        size = weights.size_bytes
         link = self._state()["links"].get(spec.id)
         if link and Path(link["path"]).is_file():
             return ("linked" if link.get("sha256") == weights.sha256 else "linked-different"), Path(link["path"])
         target = self.target_path(spec)
-        if target.is_file() and self._matches(target, weights.sha256, size, quick=quick):
+        if target.is_file() and self._file_ok(target, weights, quick=quick):
             return "installed", target
         from neuralframe.bundle import bundled
 
-        shipped = bundled("models", spec.id, weights.filename)
-        if shipped is not None and self._matches(shipped, weights.sha256, size, quick=quick):
+        shipped = bundled("models", spec.files_dir or spec.id, weights.filename)
+        if shipped is not None and self._file_ok(shipped, weights, quick=quick):
             return "bundled", shipped
+        if spec.is_engine:  # engines read all of a model's files from one folder
+            return "missing", None
+        name = Path(weights.filename).name
         for folder in self.search_paths:
-            for candidate in (folder / spec.id / weights.filename, folder / weights.filename):
-                if candidate.is_file() and self._matches(candidate, weights.sha256, size, quick=quick):
+            for candidate in (folder / spec.id / weights.filename, folder / weights.filename, folder / name):
+                if candidate.is_file() and self._file_ok(candidate, weights, quick=quick):
                     return "found", candidate
         return "missing", None
 
@@ -265,11 +333,12 @@ class ModelLibrary:
         size = None
         partial = 0
         if path is not None:
-            size = path.stat().st_size
+            size = path.stat().st_size + sum(w.size_bytes or 0 for w in spec.extra_weights)
         elif spec.weights is not None:
-            size = self.weights(spec).size_bytes
-            part = self._partial_path(spec)
-            partial = part.stat().st_size if part.is_file() else 0
+            size = sum(w.size_bytes or 0 for w in self.files(spec)) or None
+            for w in self.files(spec):
+                part = self.folder(spec) / (w.filename + ".part")
+                partial += part.stat().st_size if part.is_file() else 0
         check = self._state()["checks"].get(spec.id)
         update = UpdateInfo(**check) if check else None
         if update is not None and spec.weights is not None and state != "builtin":
@@ -299,19 +368,50 @@ class ModelLibrary:
             raise NeuralFrameError(ErrorCode.MODEL_UNAVAILABLE, f"model {spec.id!r} has no weight file")
         if spec.licence_restricted:
             log.warning("model licence restricts use", model=spec.id, licence=spec.licence, url=spec.licence_url)
-        _state, path = self.locate(spec)
+        if spec.extra_weights:
+            self._ensure_extras(spec, progress, cancel)
+        _state, path = self._locate_main(spec)
         if path is not None:
             return path
         return self.download(spec, progress=progress, cancel=cancel)
+
+    def _ensure_extras(self, spec: ModelSpec, progress: ProgressCallback | None, cancel: Cancellable | None) -> None:
+        """Download the extra files first; progress covers every file of the model."""
+        missing = self.missing_files(spec, quick=False)
+        if not missing:
+            return
+        main_missing = self._locate_main(spec, quick=True)[0] == "missing"
+        total = sum(w.size_bytes or 0 for w in missing) + (
+            (self.weights(spec).size_bytes or 0) if main_missing else 0)
+        done_before = 0
+        for w in missing:
+            def scaled(event: DownloadProgress, base: int = done_before) -> None:
+                if progress is not None:
+                    progress(DownloadProgress(spec.id, base + event.done, total or None, event.speed_bps,
+                                              ((total - base - event.done) / event.speed_bps)
+                                              if total and event.speed_bps > 0 else None))
+            self.download(spec, progress=scaled, cancel=cancel, weights=w)
+            done_before += w.size_bytes or 0
 
     def _partial_path(self, spec: ModelSpec) -> Path:
         target = self.target_path(spec)
         return target.with_name(target.name + ".part")
 
+    def _headers(self, url: str) -> dict[str, str]:
+        if self.hf_token and url.startswith("https://huggingface.co/"):
+            return {"Authorization": f"Bearer {self.hf_token}"}
+        return {}
+
     def download(self, spec: ModelSpec, *, progress: ProgressCallback | None = None,
                  cancel: Cancellable | None = None, weights: WeightsSpec | None = None) -> Path:
         """Download (or resume) the model's file into the models folder and verify it."""
         weights = weights or self.weights(spec)
+        if weights.url.startswith("manual:"):
+            raise NeuralFrameError(
+                ErrorCode.MODEL_UNAVAILABLE,
+                f"{weights.filename} for {spec.id} cannot be downloaded automatically",
+                hint=f"download it yourself from {weights.url.removeprefix('manual:')} and use it with \"Use a "
+                f"file I have...\" in the Models window (or `neuralframe models link {spec.id} FILE`)")
         with self._lock:
             if spec.id in self._busy:
                 raise NeuralFrameError(ErrorCode.DOWNLOAD_FAILED, f"{spec.id} is already being downloaded")
@@ -324,7 +424,7 @@ class ModelLibrary:
 
     def _download(self, spec: ModelSpec, weights: WeightsSpec, progress: ProgressCallback | None,
                   cancel: Cancellable | None) -> Path:
-        target = self.models_dir / spec.id / weights.filename
+        target = self.folder(spec) / weights.filename
         partial = target.with_name(target.name + ".part")
         target.parent.mkdir(parents=True, exist_ok=True)
         meter = _Meter(spec.id, weights.size_bytes, progress)
@@ -332,7 +432,8 @@ class ModelLibrary:
         offset = partial.stat().st_size if partial.is_file() else 0
         log.info("downloading model", model=spec.id, url=weights.url, resume_from=offset)
         try:
-            with _Stream(weights.url, offset, self.timeout_s, self.transport) as (stream, resumed, total):
+            with _Stream(weights.url, offset, self.timeout_s, self.transport,
+                         self._headers(weights.url)) as (stream, resumed, total):
                 if resumed:
                     with partial.open("rb") as fh:
                         while block := fh.read(1 << 20):
@@ -360,11 +461,16 @@ class ModelLibrary:
             ) from exc
         meter.finish()
         actual = digest.hexdigest()
-        if actual != weights.sha256:
+        expected = weights.sha256 or actual
+        if weights.sha256 == "" and weights.size_bytes is not None and partial.stat().st_size != weights.size_bytes:
+            expected = "size " + str(weights.size_bytes)
+        if weights.sha256 == "" and weights.git_sha1 and git_blob_sha1(partial) != weights.git_sha1:
+            expected = "git " + weights.git_sha1
+        if actual != expected:
             partial.unlink(missing_ok=True)
             raise NeuralFrameError(ErrorCode.DOWNLOAD_FAILED,
-                                   f"{spec.id}: the downloaded file is not the expected one (SHA256 {actual[:12]}..., "
-                                   f"expected {weights.sha256[:12]}...)",
+                                   f"{spec.id}: the downloaded file {weights.filename} is not the expected one "
+                                   f"(SHA256 {actual[:12]}..., expected {expected[:16]}...)",
                                    hint="try again; if it keeps failing the file was changed at its source - use "
                                    "\"Check for updates\"")
         partial.replace(target)
@@ -372,16 +478,29 @@ class ModelLibrary:
             data = self._state()
             st = target.stat()
             data["verified"][str(target.resolve())] = [st.st_size, st.st_mtime_ns, actual]
+            if not weights.sha256:  # no published SHA256: remember the first download's
+                data["verified"][f"tofu:{target.resolve()}"] = actual
             self._save(data)
         log.info("model downloaded and verified", model=spec.id, path=str(target))
         return target
 
-    def delete(self, spec: ModelSpec) -> int:
-        """Remove the downloaded copy (and any partial download). Never touches linked or bundled files."""
+    def delete(self, spec: ModelSpec, *, shared: bool = False) -> int:
+        """Remove the downloaded copy (and any partial download). Never touches linked or bundled files.
+        In a folder shared by several models, only this model's files go (``shared`` also removes files
+        other models use, such as a common VAE)."""
         if self.busy(spec):
             raise NeuralFrameError(ErrorCode.INVALID_INPUT, f"{spec.id} is being downloaded; cancel it first")
-        folder = self.models_dir / spec.id
+        folder = self.folder(spec)
         freed = 0
+        if spec.files_dir:
+            for w in self.files(spec):
+                if w.shared and not shared:
+                    continue
+                for f in (folder / w.filename, folder / (w.filename + ".part")):
+                    if f.is_file():
+                        freed += f.stat().st_size
+                        f.unlink()
+            return freed
         if folder.is_dir():
             for f in folder.iterdir():
                 if f.is_file():
@@ -582,8 +701,10 @@ class _Stream:
     """Stream ``url`` from ``offset`` (HTTP range when supported; ``file://`` for local mirrors and tests).
     Yields (chunks, resumed, total size)."""
 
-    def __init__(self, url: str, offset: int, timeout_s: float, transport: httpx.BaseTransport | None) -> None:
+    def __init__(self, url: str, offset: int, timeout_s: float, transport: httpx.BaseTransport | None,
+                 headers: dict[str, str] | None = None) -> None:
         self.url, self.offset, self.timeout_s, self.transport = url, offset, timeout_s, transport
+        self.extra_headers = headers or {}
         self._stack: list[Any] = []
 
     def __enter__(self) -> tuple[Iterator[bytes], bool, int | None]:
@@ -599,7 +720,7 @@ class _Stream:
         client = httpx.Client(follow_redirects=True, timeout=self.timeout_s, transport=self.transport,
                               headers={"User-Agent": "neuralframe-model-download"})
         self._stack.append(client)
-        headers = {"Range": f"bytes={self.offset}-"} if self.offset else {}
+        headers = {**self.extra_headers, **({"Range": f"bytes={self.offset}-"} if self.offset else {})}
         response = client.send(client.build_request("GET", self.url, headers=headers), stream=True)
         self._stack.append(response)
         response.raise_for_status()
@@ -611,3 +732,48 @@ class _Stream:
     def __exit__(self, *exc: object) -> None:
         for item in reversed(self._stack):
             item.close()
+
+
+def fetch_file(url: str, target: Path, *, sha256: str = "", size: int | None = None, label: str = "",
+               progress: ProgressCallback | None = None, cancel: Cancellable | None = None,
+               timeout_s: float = 60.0, headers: dict[str, str] | None = None,
+               transport: httpx.BaseTransport | None = None) -> str:
+    """Download ``url`` to ``target`` (resumable ``.part``, progress, cancel) and return its SHA256; raises
+    when ``sha256`` is given and does not match. Used for tools and source archives (models go through
+    :class:`ModelLibrary`)."""
+    target.parent.mkdir(parents=True, exist_ok=True)
+    partial = target.with_name(target.name + ".part")
+    meter = _Meter(label or target.name, size, progress)
+    digest = hashlib.sha256()
+    offset = partial.stat().st_size if partial.is_file() else 0
+    try:
+        with _Stream(url, offset, timeout_s, transport, headers) as (stream, resumed, total):
+            if resumed:
+                with partial.open("rb") as fh:
+                    while block := fh.read(1 << 20):
+                        digest.update(block)
+            else:
+                offset = 0
+            meter.start(offset, total if total is not None else size)
+            with partial.open("ab" if resumed else "wb") as fh:
+                for block in stream:
+                    if cancel is not None and cancel.is_set():
+                        raise JobCancelled(f"download of {label or target.name} cancelled")
+                    fh.write(block)
+                    digest.update(block)
+                    meter.add(len(block))
+    except JobCancelled:
+        meter.finish()
+        raise
+    except (httpx.HTTPError, OSError) as exc:
+        raise NeuralFrameError(ErrorCode.DOWNLOAD_FAILED, f"cannot download {label or url}: {exc}",
+                               hint="check the internet connection and free disk space, then try again") from exc
+    meter.finish()
+    actual = digest.hexdigest()
+    if sha256 and actual != sha256:
+        partial.unlink(missing_ok=True)
+        raise NeuralFrameError(ErrorCode.DOWNLOAD_FAILED,
+                               f"{label or target.name}: the download is not the expected file (SHA256 "
+                               f"{actual[:12]}..., expected {sha256[:12]}...)", hint="try again")
+    partial.replace(target)
+    return actual

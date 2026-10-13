@@ -342,6 +342,34 @@ model downloads by the developer - every engine and its weights are installed on
   and file name, which would have rebuilt TensorRT engines); only a different file changes the weights in
   the job's model spec.
 
+### Findings from Milestone 12 (code only; nothing installed or run yet)
+
+- The generative projects disagree on everything: Python 3.10-3.12, PyTorch 2.0.1 to 2.11 on CUDA 11.8 to
+  13.0, pinned diffusers/transformers versions, training-only extras (gradio, wandb, deepspeed, triton) and
+  packages without Windows wheels. Hence one isolated environment per engine, created by a pinned `uv`
+  (which also downloads the Python interpreter, so the Windows app needs nothing installed), with upstream
+  requirement files filtered and PyTorch pinned per engine from its own CUDA index.
+- Hooking engines into the temporal stage (the RealBasicVSR path) instead of a separate two-pass job keeps
+  scene-cut chunking with overlap and cross-fades, resume, colour handling, frame generation, audio sync
+  and the report for free; the engine only sees "these frames -> restored frames".
+- Several projects have no command line (FlashVSR's scripts hard-code paths and centre-crop to multiples of
+  128; SUPIR reads paths from a Python file and a YAML file): NeuralFrame ships small driver scripts that
+  run in the engine's environment. The FlashVSR driver pads instead of cropping, so no picture is lost.
+- FlashVSR imports its Block-Sparse-Attention CUDA extension unconditionally; without a CUDA compiler a
+  PyTorch implementation of the same block-masked attention (gathering only the allowed key blocks) stands
+  in - slower, and the authors warn dense fallbacks can change results slightly.
+- Weights: Hugging Face publishes SHA256 for large files and git blob ids for small ones (configs,
+  tokenizers), so every file is pinned; DOVE's repository lacks its VAE (taken from CogVideoX 1.5);
+  SUPIR's checkpoints exist only on Google Drive/Baidu (manual download + "Use a file I have"); FLUX.1-dev
+  is gated (token); GitHub release assets older than 2025 have no published digest (size check, SHA256
+  of the first download remembered).
+- Licences: SwiftVR weights (research licence), HYPIR, SUPIR, InvSR, CodeFormer, KEEP and LucidFlux (via
+  FLUX.1-dev) are non-commercial and marked "personal use only"; NVIDIA's nvidia-vfx is proprietary.
+- Risks for the first real runs (to verify with the user's OK): SwiftVR/DOVE requirements that need
+  `decord` (left out; their readers may still import it), xformers/triton pins, FlashVSR's pipeline API
+  on newer diffusers, output folder conventions of each CLI (the collector searches recursively), GPU
+  memory on 8 GB cards (SeedVR2 Q4 with block swap is the configuration expected to fit).
+
 ### Research: upscalers for very low-quality sources and generative restoration (2026-10-13)
 
 What exists (sources checked 2026-10-13; licences from the projects' own pages where stated):
@@ -570,34 +598,34 @@ model manager UI -> CLI/web -> build changes -> tests -> docs.
 ### M12 — Generative restoration engines (requested 2026-10-13: "do those too", SeedVR2 included)
 Planned before the work (section 1.4). Code only for now: **no tests run, nothing downloaded** until the
 user allows it.
-- [ ] Engine framework (`neuralframe/engines/`): each engine is an entry in the model lists (same
+- [x] Engine framework (`neuralframe/engines/`): each engine is an entry in the model lists (same
       "purpose - speed (name)" labels, its own group "Generative restoration") with licence, sizes and
       status; installed on demand into its **own isolated environment** (pinned Python packages, upstream
       code pinned to a commit and checksum), so its dependencies never clash with NeuralFrame's
-- [ ] Installer: a pinned `uv` binary (downloaded on first use, SHA256-checked) creates the environment and
+- [x] Installer: a pinned `uv` binary (downloaded on first use, SHA256-checked) creates the environment and
       installs packages; progress, cancel and remove like model downloads; works from source and from the
       Windows app (no Python needed on the computer)
-- [ ] Weights with several files per engine (diffusion models: transformer, VAE, text embeddings...),
+- [x] Weights with several files per engine (diffusion models: transformer, VAE, text embeddings...),
       downloaded on demand through the model library (progress, resume, checksum, local files, updates)
-- [ ] Two-pass pipeline: (1) the engine restores scene-aligned chunks of the input (resumable, cancellable,
-      progress per chunk and per frame where the engine reports it); (2) the normal pipeline makes the
-      exact output size, colour, optional frame generation, encoding, and muxes the original audio,
-      subtitles and chapters (sync check as always). Pictures: engine, then the normal image path
-- [ ] Video engines: SeedVR2 3B / 7B (FP16, FP8, GGUF Q4/Q8; block swap and VAE tiling for small GPUs),
+- [x] Pipeline: implemented inside the existing temporal stage instead of two passes - the engine restores
+      each scene-aligned chunk (with overlap and cross-fades), the stage resizes to the exact output size
+      and converts colours, and frame generation, encoding, muxing of the original audio/subtitles/chapters,
+      the sync check and resume work unchanged. Pictures: engine, then the normal image path
+- [x] Video engines: SeedVR2 3B / 7B (FP16, FP8, GGUF Q4/Q8; block swap and VAE tiling for small GPUs),
       FlashVSR v1.1, DOVE, SwiftVR (research licence: personal use only), NVIDIA RTX Video Super Resolution
       (`nvidia-vfx`, proprietary, installed only on request)
-- [ ] Picture engines: OSEDiff, HYPIR (non-commercial), SUPIR (non-commercial, very large), LucidFlux
+- [x] Picture engines: OSEDiff, HYPIR (non-commercial), SUPIR (non-commercial, very large), LucidFlux
       (FLUX.1-dev licence, needs a Hugging Face token), InvSR (non-commercial)
-- [ ] Face restoration as an optional extra step ("Restore faces": GFPGAN 1.4, RestoreFormer++, CodeFormer
+- [x] Face restoration as an optional extra step ("Restore faces": GFPGAN 1.4, RestoreFormer++, CodeFormer
       (non-commercial), KEEP for video (non-commercial)), applied to the restored/upscaled frames
-- [ ] Desktop app: generative engines in the model list and Models window (Install / Remove / progress /
+- [x] Desktop app: generative engines in the model list and Models window (Install / Remove / progress /
       Cancel), clear warnings that they invent detail and are very slow, "Restore faces" option, a
       Hugging Face token field where an engine needs one
-- [ ] Command line: `-m seedvr2-3b` etc., `--faces gfpgan`, `neuralframe engines list/install/remove`;
+- [x] Command line: `-m seedvr2-3b` etc., `--faces gfpgan`, `neuralframe engines list/install/remove`;
       web UI lists them
-- [ ] Docs: README (what generative restoration does and does not do, licences, disk/VRAM needs), model
+- [x] Docs: README (what generative restoration does and does not do, licences, disk/VRAM needs), model
       cards, packaged README, plan findings
-- [ ] Tests written for later (CPU, fake engine with a tiny local "environment"), not run now
+- [x] Tests written for later (CPU, fake engine with a tiny local "environment"), not run now
 - [ ] Later, with the user's OK: install and run each engine on the GPU, measure, fix what real runs reveal
 
 ## 6. Working agreement

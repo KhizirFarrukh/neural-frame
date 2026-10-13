@@ -89,6 +89,8 @@ class JobSpec(BaseModel):
     overwrite: bool = False
     keep_work_dir: bool | None = None
     upscale: bool = True
+    faces: str | None = None
+    """Face restoration model (``kind: faces``) applied to the upscaled frames, or None."""
     """False = keep the source size (frame generation only)."""
     interpolate: bool = False
     """Frame generation: constant-rate output at ``target_fps`` with dropped frames re-synthesised."""
@@ -186,6 +188,8 @@ class JobPlan:
     out_fps: Fraction | None = None
     model_choice: dict[str, Any] | None = None
     """Content analysis and reasons when the model was chosen automatically."""
+    faces: ModelSpec | None = None
+    """Face restoration applied before encoding."""
 
     def __post_init__(self) -> None:
         if self.source_chunks is None:
@@ -230,6 +234,7 @@ class JobPlan:
             "chunks": self.chunks.summary(),
             "framegen": self.framegen,
             "model_choice": self.model_choice,
+            "faces": self.faces.id if self.faces else None,
             "mode": self.mode,
             "ops": self.ops if self.mode == "host" else "torch",
             "inference": self.inference.summary() if self.inference else None,
@@ -401,9 +406,14 @@ class JobRunner:
         model_id = spec.model or preset.model or "auto"
         if model_id == "auto":
             model_id = self.recommend_model(spec, tools, media)
+        model = self.registry.get(model_id)
+        if model.kind == "faces":
+            raise NeuralFrameError(ErrorCode.INVALID_INPUT, f"{model.id} restores faces; it is not an upscaler",
+                                   hint="choose an upscaling model and add face restoration with --faces "
+                                   f"{model.id} (\"Restore faces\" in the desktop app)")
         # The weights actually used (an installed update or the user's own linked file): engine caches and
         # resume keys then follow the real file.
-        return self.library.effective_spec(self.registry.get(model_id))
+        return self.library.effective_spec(model)
 
     @property
     def library(self) -> ModelLibrary:
@@ -419,6 +429,8 @@ class JobRunner:
         with bytes, speed and time left; cancelling the job cancels the download, keeping the part done)."""
         from neuralframe.models.library import DownloadProgress
 
+        if model.weights is None:
+            raise NeuralFrameError(ErrorCode.MODEL_UNAVAILABLE, f"model {model.id!r} has no weight file")
         if self.library.is_ready(model):
             return Path(self.library.ensure(model))
         label = model.label
@@ -433,6 +445,107 @@ class JobRunner:
             return Path(self.library.ensure(model, progress=on_progress, cancel=self.cancel))
         finally:
             self._download = None
+    def prepare_engine(self, engine_id: str) -> Any:
+        """The engine's environment, installed first if needed (reported as ``downloading``: the installer
+        fetches Python, PyTorch, packages and code; cancelling the job cancels it)."""
+        from neuralframe.engines.catalog import engine
+        from neuralframe.engines.env import EngineEnv, InstallProgress
+
+        e = engine(engine_id)
+        env = EngineEnv.for_settings(e, self.settings)
+        if env.state() == "installed":
+            return env
+        label = f"installing {e.name}"
+        self._emit("downloading", label)
+
+        def on_progress(p: InstallProgress) -> None:
+            self._download = {"model": e.id, "label": label, "done": int(p.fraction * 1000), "total": 1000,
+                              "speed_bps": 0, "eta_s": None, "text": f"{p.step}: {p.message}"}
+            self._emit("downloading", f"{label} - {p.step}: {p.message}")
+
+        try:
+            env.install(on_progress, cancel=self.cancel)
+        finally:
+            self._download = None
+        return env
+
+    def prepare_faces(self, spec: JobSpec, notes: list[str]) -> ModelSpec | None:
+        if not spec.faces:
+            return None
+        faces = self.registry.get(spec.faces)
+        if faces.kind != "faces" or faces.engine is None:
+            raise NeuralFrameError(ErrorCode.INVALID_INPUT, f"{faces.id} is not a face restoration model",
+                                   hint="`neuralframe models list` shows them under Face restoration")
+        if not spec.upscale:
+            notes.append("face restoration needs upscaling; it is skipped for frame generation only")
+            return None
+        self.prepare_engine(faces.engine)
+        if faces.all_weights:
+            self.fetch_model(faces)
+        notes.append(f"faces restored with {faces.label}")
+        return faces
+
+    def _plan_engine(self, spec: JobSpec, model: ModelSpec, notes: list[str]) -> tuple[InferencePlan, Path | None]:
+        from neuralframe.engines.catalog import engine
+        from neuralframe.inference.factory import InferencePlan, resolve_device, torch_cuda_available
+
+        assert model.engine is not None
+        e = engine(model.engine)
+        self.prepare_engine(model.engine)
+        weights = self.fetch_model(model) if model.all_weights else None
+        if not torch_cuda_available():
+            raise NeuralFrameError(ErrorCode.BACKEND_UNAVAILABLE, f"{model.label} needs an NVIDIA graphics card",
+                                   hint="generative engines run on CUDA only; choose another model")
+        device = resolve_device(spec.gpus or self.settings.inference.gpus)
+        sequence = self.settings.engines.sequence_frames or e.sequence_frames
+        inference = InferencePlan(backend="engine", device=str(device), precision="engine", tile=None, overlap=0,
+                                  batch=1, frames_per_call=sequence, budget_mb=0, devices=(str(device),),
+                                  temporal_frames=sequence + 2 * model.default_overlap)
+        notes.append(f"engine {e.id}: {sequence} frames per run on {device}"
+                     + (f" ({e.licence})" if e.restricted else ""))
+        return inference, weights
+
+    def generative_model(self, model: ModelSpec, device: str, out_size: tuple[int, int]) -> Any:
+        """The engine as a sequence model for the temporal stage (or a single picture)."""
+        import torch
+
+        from neuralframe.engines.model import GenerativeModel
+
+        cap = self.settings.engines.max_output_height
+        if cap and out_size[1] > cap:
+            out_size = (max(16, round(out_size[0] * cap / out_size[1])), cap)
+        return GenerativeModel(self._engine_runner(model, device), device=torch.device(device), out_size=out_size)
+
+    def face_restorer(self, model: ModelSpec) -> Any:
+        from neuralframe.engines.model import FaceRestorer
+        from neuralframe.inference.factory import resolve_device
+
+        return FaceRestorer(self._engine_runner(model, str(resolve_device(self.settings.inference.gpus))))
+
+    def _engine_runner(self, model: ModelSpec, device: str) -> Any:
+        import torch
+
+        from neuralframe.engines.catalog import engine
+        from neuralframe.engines.env import EngineEnv
+        from neuralframe.engines.model import EngineRunner, model_files
+        from neuralframe.io.ffmpeg import locate_ffmpeg
+
+        assert model.engine is not None
+        settings = self.settings
+        env = EngineEnv.for_settings(engine(model.engine), settings)
+        tools = locate_ffmpeg(settings.ffmpeg.ffmpeg, settings.ffmpeg.ffprobe)
+        env.ffmpeg_dir = Path(tools.ffmpeg).parent
+        dev = torch.device(device)
+        gpu = dev.index or 0 if dev.type == "cuda" else 0
+        vram = torch.cuda.get_device_properties(dev).total_memory / 2**30 if dev.type == "cuda" else None
+
+        def on_message(text: str) -> None:
+            self._emit("running", text)
+
+        return EngineRunner(model, env, model_files(self.library, model), tools=tools,
+                            work_dir=settings.paths.work() / "engines" / self.job_id, gpu=gpu, vram_gb=vram,
+                            cancel=self.cancel, on_message=on_message, keep_temp=settings.engines.keep_temp)
+
     def recommend_model(self, spec: JobSpec, tools: FFmpegTools | None, media: MediaInfo | None) -> str:
         """Automatic model choice (models/advisor.py); records the reasons in :attr:`model_choice`."""
         fallback = "realesr-general-x4v3"
@@ -473,6 +586,11 @@ class JobRunner:
         target = spec.target if spec.upscale else TargetSpec.native()
         geometry, geo_notes = plan_geometry(video, target, model.scale)
         notes += geo_notes
+        if model.is_engine:  # engines generate towards the target in one run; the rest is plain resizing
+            geometry = dataclasses.replace(geometry, model_passes=1)
+            notes.append(f"{model.id} is a generative engine: it creates new detail (not recovered detail) and "
+                         "runs chunk by chunk in its own environment")
+        faces = self.prepare_faces(spec, notes)
 
         codec = spec.codec or settings.encode.codec or preset.codec or "hevc"
         ten_bit = spec.ten_bit if spec.ten_bit is not None else settings.encode.ten_bit
@@ -644,6 +762,7 @@ class JobRunner:
             weights=weights, temporal_overlap=temporal_overlap, output_frames=output_frames,
             source_chunks=source_chunks, retime=retime, framegen_order=fg_order, framegen_model=fg_model,
             framegen_weights=fg_weights, framegen=framegen, out_fps=out_fps, model_choice=self.model_choice,
+            faces=faces,
         )
 
     def needs_analysis(self, model: ModelSpec) -> bool:
@@ -740,6 +859,8 @@ class JobRunner:
         """Resolve weights (download + verify) and choose backend, device, tile and batch."""
         if model.is_classical or geometry.model_passes == 0:
             return None, None
+        if model.is_engine:
+            return self._plan_engine(spec, model, notes)
         from neuralframe.inference.factory import (
             memory_budget,
             plan_inference,
@@ -949,6 +1070,11 @@ class JobRunner:
         neural = plan.inference is not None
         if plan.passthrough:
             return IdentityProcessor()
+        if plan.model.is_engine and plan.inference is not None:
+            from neuralframe.inference.temporal import TemporalProcessor
+
+            return TemporalProcessor(self.generative_model(plan.model, plan.inference.device,
+                                                           (plan.geometry.out_width, plan.geometry.out_height)))
         if plan.model.is_temporal and plan.inference is not None and plan.weights is not None:
             import torch
 
@@ -1250,6 +1376,14 @@ class JobRunner:
             stages += self._sr_chain(plan, processors, current, sr_out, sizes,
                                      done_ids if retime is None else set(), skip_decoded is not None)
             current = sr_out
+            if plan.faces is not None:
+                from neuralframe.engines.faces import FaceStage
+
+                q_faces: StageQueue[Any] = StageQueue("faces", sizes["encode"], cancel)
+                stages.append(FaceStage(cancel, current, q_faces, restorer=self.face_restorer(plan.faces),
+                                        fmt=plan.out_fmt, color=plan.encoder.color))
+                self._queues["faces"] = current
+                current = q_faces
         if retime is not None and plan.framegen_order != "interpolate_first":
             q_rt2: StageQueue[Any] = StageQueue("retimed", sizes["encode"], cancel)
             stages.append(RetimeStage(cancel, current, q_rt2, plan=retime, interpolator=interpolator,

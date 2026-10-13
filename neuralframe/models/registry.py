@@ -11,16 +11,19 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from neuralframe.errors import ErrorCode, NeuralFrameError
 
-ModelKind = Literal["classical", "sr", "interpolation"]
+ModelKind = Literal["classical", "sr", "interpolation", "generative", "faces"]
 InputKind = Literal["single", "window", "recurrent"]
 Speed = Literal["fast", "medium", "slow", "very-slow"]
 ContentKind = Literal["live-action", "animation"]
 Degradation = Literal["noise", "compression", "blur"]
 Backend = Literal["tensorrt", "onnxruntime", "torch"]
-Category = Literal["filmed", "damaged", "animation", "ai-art", "games", "text", "classical"]
+Category = Literal["generative", "filmed", "damaged", "animation", "ai-art", "games", "text", "classical", "faces"]
+MediaKind = Literal["video", "image"]
+_ALL_MEDIA: list[MediaKind] = ["video", "image"]
 
 # Headings for the model lists, in display order (models without a category go last, as "Your models").
 CATEGORY_TITLES: dict[str, str] = {
+    "generative": "Generative restoration (invents detail, very slow)",
     "filmed": "Filmed video & photos",
     "damaged": "Old, damaged or very low quality",
     "animation": "Cartoons & anime",
@@ -28,6 +31,7 @@ CATEGORY_TITLES: dict[str, str] = {
     "games": "Games, textures & pixel art",
     "text": "Text, documents & comics",
     "classical": "Plain resizing (no AI)",
+    "faces": "Face restoration",
 }
 USER_CATEGORY_TITLE = "Your models"
 SPEED_WORDS = {"fast": "fast", "medium": "medium", "slow": "slow", "very-slow": "very slow"}
@@ -37,9 +41,16 @@ class WeightsSpec(BaseModel):
     model_config = ConfigDict(frozen=True, extra="forbid")
 
     url: str
-    sha256: str
+    sha256: str = ""
+    """SHA256 of the file; empty when the host publishes none (then ``git_sha1`` or the size is checked and
+    the SHA256 of the first download is remembered)."""
     filename: str
+    """File name, or a path relative to the model's folder (``transformer/config.json``)."""
     size_bytes: int | None = None
+    git_sha1: str | None = None
+    """Git blob id (small files on Hugging Face have no SHA256 but a git id)."""
+    shared: bool = False
+    """Used by several models (kept when one of them is deleted)."""
 
 
 class ModelSpec(BaseModel):
@@ -94,6 +105,30 @@ class ModelSpec(BaseModel):
     """Group in the model lists (see :data:`CATEGORY_TITLES`)."""
     max_tile: int | None = Field(default=None, ge=16)
     """Largest input tile the model works well on (e.g. networks trained on fixed small patches)."""
+    engine: str | None = None
+    """Generative and face models: the engine that runs them (``neuralframe/engines``), in its own
+    environment."""
+    engine_options: dict[str, Any] = Field(default_factory=dict)
+    """Settings passed to the engine (model file, variant, steps...)."""
+    extra_weights: list[WeightsSpec] = Field(default_factory=list)
+    """Further files the model needs (VAE, text embeddings, configs...)."""
+    files_dir: str | None = None
+    """Folder (under the models folder) shared by models of one engine; default: the model id."""
+    media: list[MediaKind] = Field(default_factory=lambda: _ALL_MEDIA.copy())
+    """What it can process."""
+
+    @property
+    def all_weights(self) -> list[WeightsSpec]:
+        return ([self.weights] if self.weights else []) + list(self.extra_weights)
+
+    @property
+    def download_bytes(self) -> int:
+        return sum(w.size_bytes or 0 for w in self.all_weights)
+
+    @property
+    def is_engine(self) -> bool:
+        """Runs through an external engine (generative restoration, face restoration)."""
+        return self.engine is not None
 
     @property
     def label(self) -> str:
@@ -162,7 +197,7 @@ class ModelRegistry:
         order = list(CATEGORY_TITLES)
         groups: dict[str, list[ModelSpec]] = {}
         for m in self._models.values():
-            if m.kind in kinds:
+            if m.kind in kinds or (m.kind == "generative" and "sr" in kinds):
                 groups.setdefault(m.category_title, []).append(m)
         titles = sorted(groups, key=lambda t: next((i for i, c in enumerate(order) if CATEGORY_TITLES[c] == t),
                                                    len(order)))

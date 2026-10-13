@@ -109,6 +109,14 @@ logging:
   json_output: false    # JSON lines on stderr
   file: null            # also append JSON logs to this file
 
+engines:
+  # Generative and face restoration engines, installed on demand into <cache_dir>/engines/<engine>.
+  hf_token: null          # Hugging Face token for gated weights (LucidFlux / FLUX.1-dev); or set HF_TOKEN
+  max_output_height: null # generate at most this height (e.g. 1080) and resize the rest; null = the target
+  sequence_frames: null   # frames per engine run; null = per engine
+  cuda_index: null        # PyTorch build for engine environments (cu118, cu124, cu128, cu130); null = per engine
+  keep_temp: false        # keep each run's input/output frames (troubleshooting)
+
 # Presets map to model, tile overlap and encoder settings. Built-ins: quality, balanced, fast. Their model is
 # "auto": each input is analysed and the best model for it is used, among fast models only (fast), fast
 # to slow models (balanced, and presets you add) or all models (quality).

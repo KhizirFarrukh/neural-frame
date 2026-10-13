@@ -97,7 +97,7 @@ class MainWindow(QMainWindow):
         from neuralframe.gui.models_dialog import DownloadController
 
         self.library = ModelLibrary.from_settings(settings)
-        self.downloads = DownloadController(self.library, self)
+        self.downloads = DownloadController(self.library, self, settings=settings)
         self.downloads.progress.connect(lambda mid, _event: self._update_model_status())
         self.downloads.finished.connect(self._download_finished)
         self.models_window: Any = None
@@ -236,6 +236,14 @@ class MainWindow(QMainWindow):
         uf.addRow("", self.auto_label)
         uf.addRow("", status_row)
         uf.addRow("Preset", self.preset_combo)
+        self.faces_combo = QComboBox()
+        self.faces_combo.addItem("Off", None)
+        for m in self.registry.of_kind("faces"):
+            self.faces_combo.addItem(m.label + ("  [personal use only]" if m.licence_restricted else ""), m.id)
+            self.faces_combo.setItemData(self.faces_combo.count() - 1, m.description, Qt.ItemDataRole.ToolTipRole)
+        self.faces_combo.setToolTip("Detects faces in the result, restores them and pastes them back (useful for "
+                                    "small or blurry faces). Installed the first time you use it.")
+        uf.addRow("Restore faces", self.faces_combo)
 
         self.framegen_box = QGroupBox("Frame generation")
         gf = QFormLayout(self.framegen_box)
@@ -358,7 +366,10 @@ class MainWindow(QMainWindow):
         updates.triggered.connect(self._check_model_updates)
         add = QAction("&Add your own model file...", self)
         add.triggered.connect(self._choose_model_file)
-        for action in (manage, updates, add):
+        token = QAction("Hugging Face &token...", self)
+        token.setToolTip("Some engines download gated weights (FLUX.1-dev for LucidFlux) and need your token")
+        token.triggered.connect(self._set_hf_token)
+        for action in (manage, updates, add, token):
             models_menu.addAction(action)
         help_menu = menu.addMenu("&Help")
         how = QAction("&How to use NeuralFrame", self)
@@ -372,6 +383,21 @@ class MainWindow(QMainWindow):
             "window (hover over a model)."))
         help_menu.addAction(how)
         help_menu.addAction(about)
+
+    def _set_hf_token(self) -> None:
+        from PySide6.QtWidgets import QInputDialog
+
+        from neuralframe.engines.secrets import hf_token, save_hf_token
+
+        current = hf_token(self.settings) or ""
+        text, ok = QInputDialog.getText(
+            self, "Hugging Face token", "Some engines download weights that need a Hugging Face account (accept the "
+            "model's licence on its page, then create a token in Settings > Access Tokens).\nPaste the token "
+            "(leave empty to remove it):", QLineEdit.EchoMode.Password, current)
+        if ok:
+            save_hf_token(text.strip() or None)
+            self.library.hf_token = text.strip() or None
+            self.statusBar().showMessage("Hugging Face token saved." if text.strip() else "Token removed.", 6000)
 
     def _show_help(self) -> None:
         QMessageBox.information(self, "How to use NeuralFrame", (
@@ -412,6 +438,21 @@ class MainWindow(QMainWindow):
             self.model_status_updated.emit()
             return
         prefix = "The automatic choice" if self.model_combo.currentData() == "auto" else "This model"
+        if spec.is_engine and not self.downloads.is_active(spec.id):
+            from neuralframe.engines.status import engine_model_status
+
+            es = engine_model_status(spec, self.settings, self.library)
+            note = ("Generative: it creates new, plausible detail (not the original's) and is very slow. "
+                    + ("Personal use only. " if spec.licence_restricted else ""))
+            if es.ready:
+                self.model_status.setText(note + "Installed and ready.")
+            else:
+                self.model_status.setText(note + f"{es.text()} - about {es.download_bytes / 1e9:.1f} GB, installed "
+                                          "when you press Start, or now:")
+                self.download_now_button.setText("Install now")
+                self.download_now_button.setVisible(True)
+            self.model_status_updated.emit()
+            return
         if self.downloads.is_active(spec.id):
             last: DownloadProgress | None = self.downloads.last.get(spec.id)
             self.model_status.setText(f"Downloading {spec.id}: {last.text() if last else 'starting...'}")
@@ -452,7 +493,8 @@ class MainWindow(QMainWindow):
         from neuralframe.gui.models_dialog import ModelManager
 
         if self.models_window is None:
-            self.models_window = ModelManager(self.registry, self.library, self.downloads, self)
+            self.models_window = ModelManager(self.registry, self.library, self.downloads, self,
+                                              settings=self.settings)
             self.models_window.changed.connect(lambda _mid: self._update_model_status())
             self.models_window.add_model_requested.connect(self._choose_model_file)
         else:
@@ -817,6 +859,7 @@ class MainWindow(QMainWindow):
             output=output,
             target=self.target_spec() if upscale else TargetSpec.default(),
             model=self.model_combo.currentData() if upscale else None,
+            faces=self.faces_combo.currentData() if upscale else None,
             preset=self.preset_combo.currentData() or "balanced",
             upscale=upscale,
             interpolate=interpolate,

@@ -187,6 +187,22 @@ class FrameGenConfig(_Section):
     _switches = field_validator("repair_drops", mode="before")(_yaml_switch)
 
 
+class EnginesConfig(_Section):
+    """Generative and face restoration engines (each installed on demand in its own environment)."""
+
+    hf_token: str | None = None
+    """Hugging Face access token for gated weights (FLUX.1-dev for LucidFlux). Also read from HF_TOKEN or
+    the token saved by the desktop app."""
+    max_output_height: int | None = Field(default=None, ge=64)
+    """Cap the height engines generate at (the rest is plain resizing); None = the target height."""
+    sequence_frames: int | None = Field(default=None, ge=1)
+    """Frames per engine call (default: per engine)."""
+    cuda_index: str | None = None
+    """PyTorch wheel index for engine environments (cu118, cu124, cu128, cu130); None = per engine."""
+    keep_temp: bool = False
+    """Keep each chunk's engine input/output files (for troubleshooting)."""
+
+
 class ApiConfig(_Section):
     host: str = "127.0.0.1"
     port: int = 8765
@@ -232,6 +248,7 @@ class Settings(BaseSettings):
     inference: InferenceConfig = Field(default_factory=InferenceConfig)
     vram: VramConfig = Field(default_factory=VramConfig)
     framegen: FrameGenConfig = Field(default_factory=FrameGenConfig)
+    engines: EnginesConfig = Field(default_factory=EnginesConfig)
     api: ApiConfig = Field(default_factory=ApiConfig)
     logging: LoggingConfig = Field(default_factory=LoggingConfig)
     presets: dict[str, PresetConfig] = Field(default_factory=dict)

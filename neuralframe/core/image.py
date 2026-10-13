@@ -125,7 +125,18 @@ def run_image_job(runner: JobRunner, spec: JobSpec, tools: FFmpegTools, media: M
     t_infer = time.perf_counter()
     out_hw = (geometry.out_height, geometry.out_width)
     stats: dict[str, Any] = {}
-    if inference is not None:
+    if inference is not None and model.is_engine:
+        import torch
+
+        from neuralframe.ops import torch_ops
+
+        generative = runner.generative_model(model, inference.device, (geometry.out_width, geometry.out_height))
+        x = torch.from_numpy(rgb[None]).to(generative.device)
+        _, restored = next(iter(generative.run(x)))
+        x = torch_ops.resize(restored[None], *out_hw, "lanczos3").clamp_(0.0, 1.0)
+        out_rgb = x[0].cpu().numpy().astype(np.float32)
+        stats = {"engine": model.engine, "engine_seconds": round(generative.seconds, 3)}
+    elif inference is not None:
         import torch
 
         from neuralframe.ops import torch_ops
@@ -143,6 +154,11 @@ def run_image_job(runner: JobRunner, spec: JobSpec, tools: FFmpegTools, media: M
     else:
         ops = get_ops(runner.settings.pipeline.ops)
         out_rgb = np.clip(ops.resize(rgb, *out_hw, model.resize_kernel), 0.0, 1.0)
+    faces = runner.prepare_faces(spec, notes)
+    if faces is not None:
+        runner._emit("running", f"restoring faces ({faces.id})")
+        u8 = (np.clip(out_rgb, 0.0, 1.0).transpose(1, 2, 0) * 255.0 + 0.5).astype(np.uint8)
+        out_rgb = runner.face_restorer(faces).restore([u8])[0].transpose(2, 0, 1).astype(np.float32) / 255.0
     out_alpha = None
     if alpha_plane is not None:
         out_alpha = np.clip(get_ops("numpy").resize(alpha_plane[None], *out_hw, "lanczos3")[0], 0.0, 1.0)

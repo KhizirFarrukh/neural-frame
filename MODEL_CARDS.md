@@ -38,11 +38,39 @@ every model on animated (Sintel) and filmed (Tears of Steel) references to refin
 
 ## All models by purpose
 
-What each model is for, its name (use it with `-m`), size and licence. *Rank* > 0: used by automatic choice (measured models); the others are chosen by you. **NC** = non-commercial licence (personal use only). Detailed cards for the core models follow below.
+What each model is for, its name (use it with `-m`, or `--faces` for face restoration), download size and licence. *Rank* > 0: used by automatic choice (measured models); the others are chosen by you. **NC** = non-commercial licence (personal use only). Generative and face models also install their engine (see [Engines](#engines)). Detailed cards for the core models follow below.
+
+### Generative restoration (invents detail, very slow)
+
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Restore very low-quality video - for 8 GB graphics cards | `seedvr2-3b-q4` | to target | very slow | 2.5 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - small graphics cards, finer | `seedvr2-3b-q8` | to target | very slow | 4.2 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video (144p-720p) into sharp HD/4K | `seedvr2-3b-fp8` | to target | very slow | 3.9 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - full precision | `seedvr2-3b-fp16` | to target | very slow | 7.3 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - larger model, 4-bit | `seedvr2-7b-q4` | to target | very slow | 5.3 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - larger model | `seedvr2-7b-fp8` | to target | very slow | 9.0 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - largest model, best quality | `seedvr2-7b-fp16` | to target | very slow | 17.0 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - sharper look, 4-bit | `seedvr2-7b-sharp-q4` | to target | very slow | 5.3 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - sharper look | `seedvr2-7b-sharp-fp8` | to target | very slow | 9.0 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore very low-quality video - sharper look, full precision | `seedvr2-7b-sharp-fp16` | to target | very slow | 17.0 GB | Apache-2.0 | - | [link](https://github.com/ByteDance-Seed/SeedVR) |
+| Restore and upscale video 4x, generative (FlashVSR) | `flashvsr-v1.1` | to target | very slow | 6.8 GB | Apache-2.0 | - | [link](https://github.com/OpenImagingLab/FlashVSR) |
+| Restore and upscale video 4x, generative, less memory (FlashVSR tiny) | `flashvsr-v1.1-tiny` | to target | very slow | 6.4 GB | Apache-2.0 | - | [link](https://github.com/OpenImagingLab/FlashVSR) |
+| Restore and upscale video 4x, generative, steady between frames (DOVE) | `dove` | to target | very slow | 42.2 GB | Apache-2.0 | - | [link](https://github.com/zhengchen1999/DOVE) |
+| Restore video, generative, fastest of the diffusion engines (SwiftVR) | `swiftvr` | to target | slow | 20.2 GB | SwiftVR Research License (NC) | - | [link](https://github.com/H-oliday/SwiftVR) |
+| Clean up and upscale video, very fast on RTX cards (NVIDIA RTX Video) | `nvidia-rtx-vsr` | to target | fast | engine downloads | NVIDIA proprietary | - | [link](https://pypi.org/project/nvidia-vfx/) |
+| Clean up and upscale video, RTX cards, highest quality (NVIDIA RTX Video) | `nvidia-rtx-vsr-ultra` | to target | fast | engine downloads | NVIDIA proprietary | - | [link](https://pypi.org/project/nvidia-vfx/) |
+| Upscale clean high-bitrate video, RTX cards (NVIDIA RTX Video) | `nvidia-rtx-vsr-highbitrate` | to target | fast | engine downloads | NVIDIA proprietary | - | [link](https://pypi.org/project/nvidia-vfx/) |
+| Photos & frames: realistic detail, one-step diffusion (OSEDiff) | `osediff` | to target | very slow | 10.8 GB | Apache-2.0 (Stable Diffusion 2.1: CreativeML OpenRAIL++-M) | - | [link](https://github.com/cswry/OSEDiff) |
+| Photos: strong, realistic restoration (HYPIR) | `hypir` | to target | very slow | 6.2 GB | HYPIR licence (non-commercial) (NC) | - | [link](https://github.com/XPixelGroup/HYPIR) |
+| Photos: diffusion super-resolution, 1-5 steps (InvSR) | `invsr` | to target | very slow | engine downloads | S-Lab License 1.0 (non-commercial) (NC) | - | [link](https://github.com/zsyOAOA/InvSR) |
+| Photos: maximum photo-realistic detail, huge (SUPIR) | `supir-v0q` | to target | very slow | 6.9 GB + checkpoint by hand | SUPIR licence (non-commercial) (NC) | - | [link](https://github.com/Fanghua-Yu/SUPIR) |
+| Photos with light damage: maximum detail, huge (SUPIR F) | `supir-v0f` | to target | very slow | 6.9 GB + checkpoint by hand | SUPIR licence (non-commercial) (NC) | - | [link](https://github.com/Fanghua-Yu/SUPIR) |
+| Photos: restoration on FLUX.1, caption-free (LucidFlux) | `lucidflux` | to target | very slow | engine downloads | FLUX.1-dev Non-Commercial License (NC) | - | [link](https://github.com/W2GenAI-Lab/LucidFlux) |
 
 ### Filmed video & photos
 
-| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
 |---|---|---|---|---|---|---|---|
 | Any video, quick all-rounder | `realesr-general-x4v3` | 4x | fast | 5 MB | BSD-3-Clause | 60 | [link](https://github.com/xinntao/Real-ESRGAN) |
 | Good-quality video to 2x, e.g. 1080p to 4K | `realplksr-x2` | 2x | medium | 30 MB | Apache-2.0 | 82 | [link](https://github.com/Phhofm/models/releases/tag/2xPublic_realplksr_dysample_layernorm_real) |
@@ -57,7 +85,7 @@ What each model is for, its name (use it with `-m`), size and licence. *Rank* > 
 
 ### Old, damaged or very low quality
 
-| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
 |---|---|---|---|---|---|---|---|
 | Damaged filmed footage & photos | `realesrgan-x4plus` | 4x | slow | 67 MB | BSD-3-Clause | 65 | [link](https://github.com/xinntao/Real-ESRGAN) |
 | Damaged filmed footage & photos (2x) | `realesrgan-x2plus` | 2x | slow | 67 MB | BSD-3-Clause | 55 | [link](https://github.com/xinntao/Real-ESRGAN) |
@@ -85,7 +113,7 @@ What each model is for, its name (use it with `-m`), size and licence. *Rank* > 
 
 ### Cartoons & anime
 
-| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
 |---|---|---|---|---|---|---|---|
 | Cartoons & anime video | `realesr-animevideov3` | 4x | fast | 3 MB | BSD-3-Clause | 75 | [link](https://github.com/xinntao/Real-ESRGAN) |
 | Anime pictures & illustrations | `realesrgan-x4plus-anime` | 4x | medium | 18 MB | BSD-3-Clause | 80 | [link](https://github.com/xinntao/Real-ESRGAN) |
@@ -109,17 +137,17 @@ What each model is for, its name (use it with `-m`), size and licence. *Rank* > 
 
 ### AI images & digital art
 
-| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
 |---|---|---|---|---|---|---|---|
 | Pictures of any kind, very sharp (photos, art, anime) | `4x-ultrasharpv2` | 4x | very slow | 140 MB | CC-BY-NC-SA-4.0 (NC) | - | [link](https://openmodeldb.info/models/4x-UltraSharpV2) |
 | AI-generated images (Stable Diffusion, Midjourney...) | `4x-lexicahat` | 4x | very slow | 85 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-LexicaHAT) |
 | AI-generated images, 2x | `2x-lexicaswinir` | 2x | very slow | 59 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/2x-LexicaSwinIR) |
 | Faces in paintings, drawings & AI art | `4x-artfaces-realplksr` | 4x | medium | 30 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-ArtFaces-realplksr-dysample) |
-| AI images & photos: invents fine, realistic detail | `aurasr-v2` | 4x | very slow | 2470 MB | Apache-2.0 | - | [link](https://huggingface.co/fal/AuraSR-v2) |
+| AI images & photos: invents fine, realistic detail | `aurasr-v2` | 4x | very slow | 2.5 GB | Apache-2.0 | - | [link](https://huggingface.co/fal/AuraSR-v2) |
 
 ### Games, textures & pixel art
 
-| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
 |---|---|---|---|---|---|---|---|
 | Old game textures, best quality | `4x-pbrify-v4` | 4x | very slow | 140 MB | CC0-1.0 | - | [link](https://openmodeldb.info/models/4x-PBRify-UpscalerV4) |
 | Old game textures | `4x-pbrify-span-v4` | 4x | fast | 9 MB | CC0-1.0 | - | [link](https://openmodeldb.info/models/4x-PBRify-UpscalerSPANV4) |
@@ -129,7 +157,7 @@ What each model is for, its name (use it with `-m`), size and licence. *Rank* > 
 
 ### Text, documents & comics
 
-| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
 |---|---|---|---|---|---|---|---|
 | Low-quality text, screenshots & scans (2x) | `2x-text2hd` | 2x | medium | 30 MB | CC-BY-SA-4.0 | - | [link](https://openmodeldb.info/models/2x-Text2HD-v-1) |
 | Printed photos & comics: removes halftone dots | `4x-dwtp-ds-dat2-v3` | 4x | very slow | 140 MB | CC-BY-4.0 | - | [link](https://openmodeldb.info/models/4x-DWTP-DS-dat2-v3) |
@@ -137,10 +165,41 @@ What each model is for, its name (use it with `-m`), size and licence. *Rank* > 
 
 ### Plain resizing (no AI)
 
-| Use it for | Name | Scale | Speed | Size | Licence | Rank | Source |
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
 |---|---|---|---|---|---|---|---|
 | Plain resize, sharp edges | `lanczos` | 1x | fast | - | n/a | - | - |
 | Plain resize, soft | `bicubic` | 1x | fast | - | n/a | - | - |
+
+### Face restoration
+
+| Use it for | Name | Scale | Speed | Download | Licence | Rank | Source |
+|---|---|---|---|---|---|---|---|
+| Restore faces - natural, good identity (GFPGAN 1.4) | `gfpgan-1.4` | faces | slow | engine downloads | Apache-2.0 | - | [link](https://github.com/TencentARC/GFPGAN) |
+| Restore faces - detailed (RestoreFormer) | `restoreformer` | faces | slow | engine downloads | Apache-2.0 | - | [link](https://github.com/wzhouxiff/RestoreFormer) |
+| Restore faces - detailed, newer (RestoreFormer++) | `restoreformer-pp` | faces | slow | engine downloads | Apache-2.0 | - | [link](https://github.com/wzhouxiff/RestoreFormerPlusPlus) |
+| Restore faces - strongest, for very blurry faces (CodeFormer) | `codeformer` | faces | slow | engine downloads | S-Lab License 1.0 (non-commercial) (NC) | - | [link](https://github.com/sczhou/CodeFormer) |
+| Restore faces in video - steady between frames (KEEP) | `keep` | faces | slow | engine downloads | S-Lab License 1.0 (non-commercial) (NC) | - | [link](https://github.com/jnjaby/KEEP) |
+
+## Engines
+
+Generative and face restoration models run in engines: upstream research projects installed on demand, each in its own environment (`<cache>/engines/<engine>`: Python, PyTorch, packages and the project's code at a pinned commit). None of these has been run by the NeuralFrame developers yet (2026-10-13).
+
+| Engine | Project | Pinned commit | Python / PyTorch | Licence | Notes |
+|---|---|---|---|---|---|
+| `seedvr2` | [numz/ComfyUI-SeedVR2_VideoUpscaler](https://github.com/numz/ComfyUI-SeedVR2_VideoUpscaler) | `4490bd1f48` | 3.12 / torch, torchvision (cu130) | Apache-2.0 | Standalone runner of SeedVR2 with GGUF/FP8 weights, block swapping and VAE tiling for small GPUs. |
+| `flashvsr` | [OpenImagingLab/FlashVSR](https://github.com/OpenImagingLab/FlashVSR) | `cf910c61a6` | 3.11 / torch==2.6.0, torchvision==0.21.0 (cu124) | Apache-2.0 | Needs the Block-Sparse-Attention CUDA kernels for full speed and quality; built when a CUDA compiler is available, otherwise a slower PyTorch implementation of the same attention is used. |
+| `dove` | [zhengchen1999/DOVE](https://github.com/zhengchen1999/DOVE) | `0cd4240442` | 3.11 / torch==2.5.1, torchvision==0.20.1 (cu124) | Apache-2.0 | - |
+| `swiftvr` | [H-oliday/SwiftVR](https://github.com/H-oliday/SwiftVR) | `4fb82651ef` | 3.10 / torch==2.10.0, torchvision==0.25.0 (cu128) | Apache-2.0 code, SwiftVR Research License weights (NC) | Weights: research licence, commercial use needs the authors' written permission. |
+| `nvidia-vsr` | [nvidia-vsr](https://github.com/NVIDIA-Maxine/nvidia-vfx-python-samples) | - | 3.12 / torch==2.11.0 (cu128) | NVIDIA proprietary licence (nvidia-vfx) | Needs an NVIDIA RTX GPU (Turing or newer) and driver 570.65 or newer. Proprietary: read NVIDIA's licence before commercial use. |
+| `osediff` | [cswry/OSEDiff](https://github.com/cswry/OSEDiff) | `cdd3b7b048` | 3.10 / torch==2.0.1, torchvision==0.15.2 (cu118) | Apache-2.0 | - |
+| `hypir` | [XPixelGroup/HYPIR](https://github.com/XPixelGroup/HYPIR) | `b61d107c6c` | 3.10 / torch==2.6.0, torchvision==0.21.0 (cu124) | HYPIR licence (non-commercial) (NC) | - |
+| `invsr` | [zsyOAOA/InvSR](https://github.com/zsyOAOA/InvSR) | `609788cd07` | 3.10 / torch==2.4.0, torchvision==0.19.0 (cu121) | S-Lab License 1.0 (non-commercial) (NC) | Downloads SD-Turbo and its noise predictor itself on first use. |
+| `supir` | [Fanghua-Yu/SUPIR](https://github.com/Fanghua-Yu/SUPIR) | `bda91af200` | 3.10 / torch==2.1.2, torchvision==0.16.2 (cu118) | SUPIR licence (non-commercial) (NC) | The SUPIR-v0Q checkpoint is published only on Google Drive and Baidu: download it yourself and use it with "Use a file I have". Needs a lot of graphics and system memory. |
+| `lucidflux` | [W2GenAI-Lab/LucidFlux](https://github.com/W2GenAI-Lab/LucidFlux) | `3e688aca5a` | 3.11 / torch==2.5.1, torchvision==0.20.1 (cu124) | FLUX.1-dev Non-Commercial License (NC) | Downloads FLUX.1-dev (about 33 GB, gated: accept its licence on huggingface.co and add your Hugging Face token), SigLIP, SwinIR and the LucidFlux weights during installation. |
+| `gfpgan` | [TencentARC/GFPGAN](https://github.com/TencentARC/GFPGAN) | `7552a7791c` | 3.10 / torch==2.0.1, torchvision==0.15.2 (cu118) | Apache-2.0 | Downloads its face and face-detection weights from the GFPGAN and facexlib releases on first use. |
+| `restoreformerpp` | [wzhouxiff/RestoreFormerPlusPlus](https://github.com/wzhouxiff/RestoreFormerPlusPlus) | `59d250f45d` | 3.10 / torch==2.0.1, torchvision==0.15.2 (cu118) | Apache-2.0 | - |
+| `codeformer` | [sczhou/CodeFormer](https://github.com/sczhou/CodeFormer) | `b33cc7d639` | 3.10 / torch==2.0.1, torchvision==0.15.2 (cu118) | S-Lab License 1.0 (non-commercial) (NC) | - |
+| `keep` | [jnjaby/KEEP](https://github.com/jnjaby/KEEP) | `f382730e32` | 3.10 / torch==2.0.1, torchvision==0.15.2 (cu118) | S-Lab License 1.0 (non-commercial) (NC) | - |
 
 ## Super-resolution: core models
 

@@ -127,6 +127,8 @@ ignore = [
 [tool.ruff.lint.per-file-ignores]
 "tests/**" = ["N802", "N803", "N806"]
 "neuralframe/gui/**" = ["N802"]  # Qt event handler overrides are camelCase
+# Scripts that run inside engine environments, kept close to the upstream examples they follow.
+"neuralframe/engines/resources/**" = ["PTH"]
 
 [tool.mypy]
 python_version = "3.11"
@@ -169,3 +171,8 @@ warn_return_any = false
 [[tool.mypy.overrides]]
 module = ["av.*", "tensorrt.*", "pynvml.*", "onnxruntime.*", "onnx.*", "lpips.*", "torchvision.*", "spandrel.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+# Driver scripts run in the engines' own environments (diffsynth, nvvfx...), not NeuralFrame's.
+module = ["neuralframe.engines.resources.*"]
+ignore_errors = true

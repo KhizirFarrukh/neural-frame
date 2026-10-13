@@ -1681,3 +1681,941 @@ models:
       sha256: 8a80b4546f3f49b9095733cb9699030409339e2f4eb0ae9c1ada14c7d21d4dde
       filename: "aurasr-v2.safetensors"
       size_bytes: 2470247916
+
+  # ---- generative restoration and face restoration (engines, installed on demand in their own
+  # environments; see neuralframe/engines). rank 0: never chosen automatically. -----------------------
+  - id: seedvr2-3b-q4
+    kind: generative
+    purpose: "Restore very low-quality video - for 8 GB graphics cards"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_3b-Q4_K_M.gguf. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_3b-Q4_K_M.gguf"}
+    weights:
+      url: https://huggingface.co/AInVFX/SeedVR2_comfyUI/resolve/ac66d6d98fa49975d893b58c55bff7677191c862/seedvr2_ema_3b-Q4_K_M.gguf
+      filename: "seedvr2_ema_3b-Q4_K_M.gguf"
+      sha256: e665e3909de1a8c88a69c609bca9d43ff5a134647face2ce4497640cc3597f0e
+      size_bytes: 1995344224
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-3b-q8
+    kind: generative
+    purpose: "Restore very low-quality video - small graphics cards, finer"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_3b-Q8_0.gguf. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_3b-Q8_0.gguf"}
+    weights:
+      url: https://huggingface.co/AInVFX/SeedVR2_comfyUI/resolve/ac66d6d98fa49975d893b58c55bff7677191c862/seedvr2_ema_3b-Q8_0.gguf
+      filename: "seedvr2_ema_3b-Q8_0.gguf"
+      sha256: be0d60083a2051a265eb4b77f28edf494e6db67ffc250216f32b72292e5cbd96
+      size_bytes: 3660613984
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-3b-fp8
+    kind: generative
+    purpose: "Restore very low-quality video (144p-720p) into sharp HD/4K"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_3b_fp8_e4m3fn.safetensors. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_3b_fp8_e4m3fn.safetensors"}
+    weights:
+      url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/seedvr2_ema_3b_fp8_e4m3fn.safetensors
+      filename: "seedvr2_ema_3b_fp8_e4m3fn.safetensors"
+      sha256: 3bf1e43ebedd570e7e7a0b1b60d6a02e105978f505c8128a241cde99a8240cff
+      size_bytes: 3391544696
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-3b-fp16
+    kind: generative
+    purpose: "Restore very low-quality video - full precision"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_3b_fp16.safetensors. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_3b_fp16.safetensors"}
+    weights:
+      url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/seedvr2_ema_3b_fp16.safetensors
+      filename: "seedvr2_ema_3b_fp16.safetensors"
+      sha256: 2fd0e03a3dad24e07086750360727ca437de4ecd456f769856e960ae93e2b304
+      size_bytes: 6783018808
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-7b-q4
+    kind: generative
+    purpose: "Restore very low-quality video - larger model, 4-bit"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_7b-Q4_K_M.gguf. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_7b-Q4_K_M.gguf"}
+    weights:
+      url: https://huggingface.co/AInVFX/SeedVR2_comfyUI/resolve/ac66d6d98fa49975d893b58c55bff7677191c862/seedvr2_ema_7b-Q4_K_M.gguf
+      filename: "seedvr2_ema_7b-Q4_K_M.gguf"
+      sha256: db9cb2ad90ebd40d2e8c29da2b3fc6fd03ba87cd58cbadceccca13ad27162789
+      size_bytes: 4758306592
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-7b-fp8
+    kind: generative
+    purpose: "Restore very low-quality video - larger model"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors"}
+    weights:
+      url: https://huggingface.co/AInVFX/SeedVR2_comfyUI/resolve/ac66d6d98fa49975d893b58c55bff7677191c862/seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors
+      filename: "seedvr2_ema_7b_fp8_e4m3fn_mixed_block35_fp16.safetensors"
+      sha256: 3d68b5ec0b295ae28092e355c8cad870edd00b817b26587d0cb8f9dd2df19bb2
+      size_bytes: 8466296338
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-7b-fp16
+    kind: generative
+    purpose: "Restore very low-quality video - largest model, best quality"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_7b_fp16.safetensors. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_7b_fp16.safetensors"}
+    weights:
+      url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/seedvr2_ema_7b_fp16.safetensors
+      filename: "seedvr2_ema_7b_fp16.safetensors"
+      sha256: 7b8241aa957606ab6cfb66edabc96d43234f9819c5392b44d2492d9f0b0bbe4a
+      size_bytes: 16479334424
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-7b-sharp-q4
+    kind: generative
+    purpose: "Restore very low-quality video - sharper look, 4-bit"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_7b_sharp-Q4_K_M.gguf. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_7b_sharp-Q4_K_M.gguf"}
+    weights:
+      url: https://huggingface.co/AInVFX/SeedVR2_comfyUI/resolve/ac66d6d98fa49975d893b58c55bff7677191c862/seedvr2_ema_7b_sharp-Q4_K_M.gguf
+      filename: "seedvr2_ema_7b_sharp-Q4_K_M.gguf"
+      sha256: 7aed800ac4eb8e0d18569a954c0ff35f5a1caa3ed5d920e66cc31405f75b6e69
+      size_bytes: 4758306592
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-7b-sharp-fp8
+    kind: generative
+    purpose: "Restore very low-quality video - sharper look"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors"}
+    weights:
+      url: https://huggingface.co/AInVFX/SeedVR2_comfyUI/resolve/ac66d6d98fa49975d893b58c55bff7677191c862/seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors
+      filename: "seedvr2_ema_7b_sharp_fp8_e4m3fn_mixed_block35_fp16.safetensors"
+      sha256: 0d2c5b8be0fda94351149c5115da26aef4f4932a7a2a928c6f184dda9186e0be
+      size_bytes: 8466296338
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: seedvr2-7b-sharp-fp16
+    kind: generative
+    purpose: "Restore very low-quality video - sharper look, full precision"
+    category: generative
+    scale: 8
+    input: recurrent
+    window: 9
+    engine: seedvr2
+    description: "SeedVR2 (ByteDance, ICLR 2026) one-step diffusion video restoration, seedvr2_ema_7b_sharp_fp16.safetensors. Removes heavy compression, noise and blur and creates realistic detail while upscaling; very slow, needs an NVIDIA GPU. On 8-12 GB cards it swaps model blocks to system memory."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/ByteDance-Seed/SeedVR
+    files_dir: seedvr2
+    engine_options: {"dit_model": "seedvr2_ema_7b_sharp_fp16.safetensors"}
+    weights:
+      url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/seedvr2_ema_7b_sharp_fp16.safetensors
+      filename: "seedvr2_ema_7b_sharp_fp16.safetensors"
+      sha256: 20a93e01ff24beaeebc5de4e4e5be924359606c356c9c51509fba245bd2d77dd
+      size_bytes: 16479334424
+    extra_weights:
+      - url: https://huggingface.co/numz/SeedVR2_comfyUI/resolve/09ced71023636e9bc8cdf9cdecfb2625d1e691e8/ema_vae_fp16.safetensors
+        filename: "ema_vae_fp16.safetensors"
+        sha256: 20678548f420d98d26f11442d3528f8b8c94e57ee046ef93dbb7633da8612ca1
+        size_bytes: 501324814
+        shared: true
+
+  - id: flashvsr-v1.1
+    kind: generative
+    purpose: "Restore and upscale video 4x, generative (FlashVSR)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 9
+    engine: flashvsr
+    description: "FlashVSR v1.1 (CVPR 2026): streaming one-step diffusion video super-resolution on Wan 2.1. 4x only; very slow without its sparse-attention kernels."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/OpenImagingLab/FlashVSR
+    files_dir: flashvsr-v1.1
+    engine_options: {"variant": "full"}
+    weights:
+      url: https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/27561b186ded3402d7c975f4fd722e2885b6135f/diffusion_pytorch_model_streaming_dmd.safetensors
+      filename: "diffusion_pytorch_model_streaming_dmd.safetensors"
+      sha256: bd28180edcf3446c028e32fc6b731a80bf7e4da2ab4caac3186b9499964d37be
+      size_bytes: 5676070392
+      shared: true
+    extra_weights:
+      - url: https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/27561b186ded3402d7c975f4fd722e2885b6135f/Wan2.1_VAE.pth
+        filename: "Wan2.1_VAE.pth"
+        sha256: 38071ab59bd94681c686fa51d75a1968f64e470262043be31f7a094e442fd981
+        size_bytes: 507609880
+      - url: https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/27561b186ded3402d7c975f4fd722e2885b6135f/LQ_proj_in.ckpt
+        filename: "LQ_proj_in.ckpt"
+        sha256: d6d011cdaaba6a52645086caa08fa04124e746f6ca568140a24007591142bfd2
+        size_bytes: 575694948
+        shared: true
+
+  - id: flashvsr-v1.1-tiny
+    kind: generative
+    purpose: "Restore and upscale video 4x, generative, less memory (FlashVSR tiny)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 9
+    engine: flashvsr
+    description: "FlashVSR v1.1 with its tiny conditional decoder: less graphics memory than the full model."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/OpenImagingLab/FlashVSR
+    files_dir: flashvsr-v1.1
+    engine_options: {"variant": "tiny"}
+    weights:
+      url: https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/27561b186ded3402d7c975f4fd722e2885b6135f/diffusion_pytorch_model_streaming_dmd.safetensors
+      filename: "diffusion_pytorch_model_streaming_dmd.safetensors"
+      sha256: bd28180edcf3446c028e32fc6b731a80bf7e4da2ab4caac3186b9499964d37be
+      size_bytes: 5676070392
+      shared: true
+    extra_weights:
+      - url: https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/27561b186ded3402d7c975f4fd722e2885b6135f/LQ_proj_in.ckpt
+        filename: "LQ_proj_in.ckpt"
+        sha256: d6d011cdaaba6a52645086caa08fa04124e746f6ca568140a24007591142bfd2
+        size_bytes: 575694948
+        shared: true
+      - url: https://huggingface.co/JunhaoZhuang/FlashVSR-v1.1/resolve/27561b186ded3402d7c975f4fd722e2885b6135f/TCDecoder.ckpt
+        filename: "TCDecoder.ckpt"
+        sha256: e224bdcf2f52745cbf4d393ff5374c2ba09e90285d5d19062d2bf63b915b6161
+        size_bytes: 189018333
+
+  - id: dove
+    kind: generative
+    purpose: "Restore and upscale video 4x, generative, steady between frames (DOVE)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 9
+    engine: dove
+    description: "DOVE (NeurIPS 2025): one-step diffusion video super-resolution fine-tuned from CogVideoX 1.5 (5B). Very large (about 43 GB) and very slow; strong temporal consistency."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/zhengchen1999/DOVE
+    files_dir: dove
+    weights:
+      url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/transformer/diffusion_pytorch_model-00001-of-00005.safetensors
+      filename: "transformer/diffusion_pytorch_model-00001-of-00005.safetensors"
+      sha256: 3b39cd5be3e8f10c7e79ee2788bd0c22e9167d855535d28ac6870ed6aad5fafd
+      size_bytes: 4969545712
+    extra_weights:
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/model_index.json
+        filename: "model_index.json"
+        git_sha1: 1de7122870f7ca65d58dde6742dbc2e8c3ac0514
+        size_bytes: 411
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/scheduler/scheduler_config.json
+        filename: "scheduler/scheduler_config.json"
+        git_sha1: 99ed07d99a4d0d26ecacb18478444385c1b274e1
+        size_bytes: 482
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/text_encoder/config.json
+        filename: "text_encoder/config.json"
+        git_sha1: f1a0797e728fa44fa3a68dea45a7eecbddd45bc2
+        size_bytes: 781
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/text_encoder/model-00001-of-00004.safetensors
+        filename: "text_encoder/model-00001-of-00004.safetensors"
+        sha256: 8e0e98242fed1de128a73ee6fee174aa30186c66f7d70811c8ebf67d72067f38
+        size_bytes: 4989319680
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/text_encoder/model-00002-of-00004.safetensors
+        filename: "text_encoder/model-00002-of-00004.safetensors"
+        sha256: 7309a33cd1780b20e3d84b2e14585d7a64ccea45079aecc86c507e381e00ed14
+        size_bytes: 4999830656
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/text_encoder/model-00003-of-00004.safetensors
+        filename: "text_encoder/model-00003-of-00004.safetensors"
+        sha256: d278bf7cb4de9957cb67d8a92dc9273f88186f0c90e0f2a3de13882217d9a95c
+        size_bytes: 4865612720
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/text_encoder/model-00004-of-00004.safetensors
+        filename: "text_encoder/model-00004-of-00004.safetensors"
+        sha256: 69afce9a62402b82095baa1dfef572be92dfd9a4062693d49a5948e4d27585a5
+        size_bytes: 4194506688
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/text_encoder/model.safetensors.index.json
+        filename: "text_encoder/model.safetensors.index.json"
+        git_sha1: 0900b8ebd70052d4cccc2eacf6e07d75bb1f9cb8
+        size_bytes: 19886
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/tokenizer/added_tokens.json
+        filename: "tokenizer/added_tokens.json"
+        git_sha1: 3f5132007c4fcf42b75b65c8b6aa49c7098bcdf4
+        size_bytes: 2593
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/tokenizer/special_tokens_map.json
+        filename: "tokenizer/special_tokens_map.json"
+        git_sha1: 17ade346a1042cbe0c1436f5bedcbd85c099d582
+        size_bytes: 2543
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/tokenizer/spiece.model
+        filename: "tokenizer/spiece.model"
+        sha256: d60acb128cf7b7f2536e8f38a5b18a05535c9e14c7a355904270e15b0945ea86
+        size_bytes: 791656
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/tokenizer/tokenizer_config.json
+        filename: "tokenizer/tokenizer_config.json"
+        git_sha1: 161715af5ee99558c9fcce7b31d3d547a72c349b
+        size_bytes: 20617
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/transformer/config.json
+        filename: "transformer/config.json"
+        git_sha1: 8748d92e5b357e61438383ff83dc7f80faae19a7
+        size_bytes: 848
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/transformer/diffusion_pytorch_model-00002-of-00005.safetensors
+        filename: "transformer/diffusion_pytorch_model-00002-of-00005.safetensors"
+        sha256: 16e2b442ffc27b0e5a43fde2d76c31830ef5e75c799e80a4c68363c5145a3dda
+        size_bytes: 4985792256
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/transformer/diffusion_pytorch_model-00003-of-00005.safetensors
+        filename: "transformer/diffusion_pytorch_model-00003-of-00005.safetensors"
+        sha256: 944d70d2a42580b4e1a030c66feeadd24e19233d329baf33fdfb87d5a6e9506f
+        size_bytes: 4985756912
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/transformer/diffusion_pytorch_model-00004-of-00005.safetensors
+        filename: "transformer/diffusion_pytorch_model-00004-of-00005.safetensors"
+        sha256: 5459aed1aeeefbc3ec21cbb6a429fd957090b11c75ffe30dea2bb7e3f326155b
+        size_bytes: 4910270480
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/transformer/diffusion_pytorch_model-00005-of-00005.safetensors
+        filename: "transformer/diffusion_pytorch_model-00005-of-00005.safetensors"
+        sha256: e3886dd9327acd930067d28dcb1724cec18cf910b58ebeda55b157eb5cd909c5
+        size_bytes: 2431455456
+      - url: https://huggingface.co/zhengchen1999/DOVE/resolve/55ea86b7b2fbad77019a300e785b7fe1be065924/transformer/diffusion_pytorch_model.safetensors.index.json
+        filename: "transformer/diffusion_pytorch_model.safetensors.index.json"
+        git_sha1: b1d0ce8042fbf8b356297d26df4453435f2af983
+        size_bytes: 103073
+      - url: https://huggingface.co/zai-org/CogVideoX1.5-5B/resolve/fdc5267c90b5c06492985b966e43aae984e189e0/vae/config.json
+        filename: "vae/config.json"
+        git_sha1: 60355c9df3132e792b6195db096f2acbd51e3a17
+        size_bytes: 871
+      - url: https://huggingface.co/zai-org/CogVideoX1.5-5B/resolve/fdc5267c90b5c06492985b966e43aae984e189e0/vae/diffusion_pytorch_model.safetensors
+        filename: "vae/diffusion_pytorch_model.safetensors"
+        sha256: a410e48d988c8224cef392b68db0654485cfd41f345f4a3a81d3e6b765bb995e
+        size_bytes: 862388596
+
+  - id: swiftvr
+    kind: generative
+    purpose: "Restore video, generative, fastest of the diffusion engines (SwiftVR)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 9
+    engine: swiftvr
+    description: "SwiftVR (2026): real-time one-step generative video restoration on Wan 2.2. Weights under the SwiftVR Research License: personal, non-commercial use only."
+    speed: slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "SwiftVR Research License"
+    source_url: https://github.com/H-oliday/SwiftVR
+    licence_restricted: true
+    files_dir: swiftvr
+    weights:
+      url: https://huggingface.co/H-oliday/SwiftVR/resolve/a0b09461bd89847712dd91dbb4c63541b4693936/transformer/diffusion_pytorch_model.safetensors
+      filename: "transformer/diffusion_pytorch_model.safetensors"
+      sha256: f7ade5b8f7f4ff8b4e26a581772ebe5bcfb6a619ece2dd3483c5395c2d7e1a31
+      size_bytes: 19999235584
+    extra_weights:
+      - url: https://huggingface.co/H-oliday/SwiftVR/resolve/a0b09461bd89847712dd91dbb4c63541b4693936/transformer/config.json
+        filename: "transformer/config.json"
+        git_sha1: 8180887e8ed86e4fd842824fb15fcabf43d19512
+        size_bytes: 495
+      - url: https://huggingface.co/H-oliday/SwiftVR/resolve/a0b09461bd89847712dd91dbb4c63541b4693936/reae.safetensors
+        filename: "reae.safetensors"
+        sha256: c915205d1833677b6887e2fdf675499d3fc781af0c644c99330f7d22fd855514
+        size_bytes: 163797568
+      - url: https://huggingface.co/H-oliday/SwiftVR/resolve/a0b09461bd89847712dd91dbb4c63541b4693936/prompt_embedding.safetensors
+        filename: "prompt_embedding.safetensors"
+        sha256: cc4cf7b9aa9def4026bb5952b8aaec846ffc83eee43cafff0d3796b7e9fdf922
+        size_bytes: 4202976
+
+  - id: nvidia-rtx-vsr
+    kind: generative
+    purpose: "Clean up and upscale video, very fast on RTX cards (NVIDIA RTX Video)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: nvidia-vsr
+    description: "NVIDIA RTX Video Super Resolution through the nvidia-vfx package (the DLSS-like video upscaler of NVIDIA's drivers): 1-4x, real time on RTX cards. Proprietary NVIDIA licence: read its terms before commercial use."
+    speed: fast
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "NVIDIA proprietary"
+    source_url: https://pypi.org/project/nvidia-vfx/
+    engine_options: {"quality": "HIGH"}
+
+  - id: nvidia-rtx-vsr-ultra
+    kind: generative
+    purpose: "Clean up and upscale video, RTX cards, highest quality (NVIDIA RTX Video)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: nvidia-vsr
+    description: "NVIDIA RTX Video Super Resolution through the nvidia-vfx package (the DLSS-like video upscaler of NVIDIA's drivers): 1-4x, real time on RTX cards. Proprietary NVIDIA licence: read its terms before commercial use."
+    speed: fast
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "NVIDIA proprietary"
+    source_url: https://pypi.org/project/nvidia-vfx/
+    engine_options: {"quality": "ULTRA"}
+
+  - id: nvidia-rtx-vsr-highbitrate
+    kind: generative
+    purpose: "Upscale clean high-bitrate video, RTX cards (NVIDIA RTX Video)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: nvidia-vsr
+    description: "NVIDIA RTX Video Super Resolution through the nvidia-vfx package (the DLSS-like video upscaler of NVIDIA's drivers): 1-4x, real time on RTX cards. Proprietary NVIDIA licence: read its terms before commercial use."
+    speed: fast
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "NVIDIA proprietary"
+    source_url: https://pypi.org/project/nvidia-vfx/
+    engine_options: {"quality": "HIGHBITRATE_ULTRA"}
+
+  - id: osediff
+    kind: generative
+    purpose: "Photos & frames: realistic detail, one-step diffusion (OSEDiff)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: osediff
+    description: "OSEDiff (NeurIPS 2024): one-step diffusion on Stable Diffusion 2.1 with the RAM tagger. Made for pictures; on video each frame is restored on its own (can flicker)."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0 (Stable Diffusion 2.1: CreativeML OpenRAIL++-M)"
+    source_url: https://github.com/cswry/OSEDiff
+    media: [image, video]
+    files_dir: sd21-family
+    weights:
+      url: https://huggingface.co/spaces/xinyu1205/recognize-anything/resolve/7c76cec1377de0d46df8091a032c4b667aea4459/ram_swin_large_14m.pth
+      filename: "ram_swin_large_14m.pth"
+      sha256: 15c729c793af28b9d107c69f85836a1356d76ea830d4714699fb62e55fcc08ed
+      size_bytes: 5625634877
+    extra_weights:
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/model_index.json
+        filename: "sd21/model_index.json"
+        git_sha1: 0f48b2256e823029112effea0c3586bf369da56c
+        size_bytes: 543
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/scheduler/scheduler_config.json
+        filename: "sd21/scheduler/scheduler_config.json"
+        git_sha1: b68a817036d3f5c36537e9c332a42c7e63a9d4e9
+        size_bytes: 346
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/feature_extractor/preprocessor_config.json
+        filename: "sd21/feature_extractor/preprocessor_config.json"
+        git_sha1: 5294955ff7801083f720b34b55d0f1f51313c5c5
+        size_bytes: 342
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/text_encoder/config.json
+        filename: "sd21/text_encoder/config.json"
+        git_sha1: f9ac7c0b3b341525cd1b65e1a715128fee97b25c
+        size_bytes: 613
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/text_encoder/model.safetensors
+        filename: "sd21/text_encoder/model.safetensors"
+        sha256: cce6febb0b6d876ee5eb24af35e27e764eb4f9b1d0b7c026c8c3333d4cfc916c
+        size_bytes: 1361597018
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/merges.txt
+        filename: "sd21/tokenizer/merges.txt"
+        git_sha1: 76e821f1b6f0a9709293c3b6b51ed90980b3166b
+        size_bytes: 524619
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/special_tokens_map.json
+        filename: "sd21/tokenizer/special_tokens_map.json"
+        git_sha1: ae0c5be6f35217e51c4c000fd325d8de0294e99c
+        size_bytes: 460
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/tokenizer_config.json
+        filename: "sd21/tokenizer/tokenizer_config.json"
+        git_sha1: 65d055d1103982d6ba7cf1c5c876a9413077daf5
+        size_bytes: 807
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/vocab.json
+        filename: "sd21/tokenizer/vocab.json"
+        git_sha1: 469be27c5c010538f845f518c4f5e8574c78f7c8
+        size_bytes: 1059962
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/unet/config.json
+        filename: "sd21/unet/config.json"
+        git_sha1: 0fa07f924dabbf7517dc62af845cd31573bc09e3
+        size_bytes: 911
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/unet/diffusion_pytorch_model.safetensors
+        filename: "sd21/unet/diffusion_pytorch_model.safetensors"
+        sha256: 6dfae3e5f7d459b50f4b0850ead945972c75bb0e1897628933e169eb43974214
+        size_bytes: 3463726498
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/vae/config.json
+        filename: "sd21/vae/config.json"
+        git_sha1: 9421ac5a7caf02657fa559cffe7c73a47572cd64
+        size_bytes: 553
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/vae/diffusion_pytorch_model.safetensors
+        filename: "sd21/vae/diffusion_pytorch_model.safetensors"
+        sha256: a1d993488569e928462932c8c38a0760b874d166399b14414135bd9c42df5815
+        size_bytes: 334643276
+        shared: true
+
+  - id: hypir
+    kind: generative
+    purpose: "Photos: strong, realistic restoration (HYPIR)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: hypir
+    description: "HYPIR (SIGGRAPH 2025): restoration with a diffusion-yielded prior on Stable Diffusion 2.1. Non-commercial licence."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "HYPIR licence (non-commercial)"
+    source_url: https://github.com/XPixelGroup/HYPIR
+    licence_restricted: true
+    media: [image, video]
+    files_dir: sd21-family
+    weights:
+      url: https://huggingface.co/lxq007/HYPIR/resolve/0954d1026903bc0dc05248910663fce2d4231430/HYPIR_sd2.pth
+      filename: "HYPIR_sd2.pth"
+      sha256: d538a2cb925451fab1f75adfe715ac2b1c8bb12fa32a0851ba01be2347b354d6
+      size_bytes: 1038090392
+    extra_weights:
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/model_index.json
+        filename: "sd21/model_index.json"
+        git_sha1: 0f48b2256e823029112effea0c3586bf369da56c
+        size_bytes: 543
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/scheduler/scheduler_config.json
+        filename: "sd21/scheduler/scheduler_config.json"
+        git_sha1: b68a817036d3f5c36537e9c332a42c7e63a9d4e9
+        size_bytes: 346
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/feature_extractor/preprocessor_config.json
+        filename: "sd21/feature_extractor/preprocessor_config.json"
+        git_sha1: 5294955ff7801083f720b34b55d0f1f51313c5c5
+        size_bytes: 342
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/text_encoder/config.json
+        filename: "sd21/text_encoder/config.json"
+        git_sha1: f9ac7c0b3b341525cd1b65e1a715128fee97b25c
+        size_bytes: 613
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/text_encoder/model.safetensors
+        filename: "sd21/text_encoder/model.safetensors"
+        sha256: cce6febb0b6d876ee5eb24af35e27e764eb4f9b1d0b7c026c8c3333d4cfc916c
+        size_bytes: 1361597018
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/merges.txt
+        filename: "sd21/tokenizer/merges.txt"
+        git_sha1: 76e821f1b6f0a9709293c3b6b51ed90980b3166b
+        size_bytes: 524619
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/special_tokens_map.json
+        filename: "sd21/tokenizer/special_tokens_map.json"
+        git_sha1: ae0c5be6f35217e51c4c000fd325d8de0294e99c
+        size_bytes: 460
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/tokenizer_config.json
+        filename: "sd21/tokenizer/tokenizer_config.json"
+        git_sha1: 65d055d1103982d6ba7cf1c5c876a9413077daf5
+        size_bytes: 807
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/tokenizer/vocab.json
+        filename: "sd21/tokenizer/vocab.json"
+        git_sha1: 469be27c5c010538f845f518c4f5e8574c78f7c8
+        size_bytes: 1059962
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/unet/config.json
+        filename: "sd21/unet/config.json"
+        git_sha1: 0fa07f924dabbf7517dc62af845cd31573bc09e3
+        size_bytes: 911
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/unet/diffusion_pytorch_model.safetensors
+        filename: "sd21/unet/diffusion_pytorch_model.safetensors"
+        sha256: 6dfae3e5f7d459b50f4b0850ead945972c75bb0e1897628933e169eb43974214
+        size_bytes: 3463726498
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/vae/config.json
+        filename: "sd21/vae/config.json"
+        git_sha1: 9421ac5a7caf02657fa559cffe7c73a47572cd64
+        size_bytes: 553
+        shared: true
+      - url: https://huggingface.co/Manojb/stable-diffusion-2-1-base/resolve/0094d483a120f3f33dafbd187ea4aa60d10de75c/vae/diffusion_pytorch_model.safetensors
+        filename: "sd21/vae/diffusion_pytorch_model.safetensors"
+        sha256: a1d993488569e928462932c8c38a0760b874d166399b14414135bd9c42df5815
+        size_bytes: 334643276
+        shared: true
+
+  - id: invsr
+    kind: generative
+    purpose: "Photos: diffusion super-resolution, 1-5 steps (InvSR)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: invsr
+    description: "InvSR (CVPR 2025): arbitrary-step super-resolution by diffusion inversion on SD-Turbo. Downloads its own weights on first use. Non-commercial licence."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "S-Lab License 1.0 (non-commercial)"
+    source_url: https://github.com/zsyOAOA/InvSR
+    licence_restricted: true
+    media: [image, video]
+    engine_options: {"steps": 1}
+
+  - id: supir-v0q
+    kind: generative
+    purpose: "Photos: maximum photo-realistic detail, huge (SUPIR)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: supir
+    description: "SUPIR (CVPR 2024) on SDXL, checkpoint SUPIR-v0Q. Its checkpoint is only on Google Drive and Baidu: download it from the project page and use it with \"Use a file I have\". Needs very much graphics and system memory. Non-commercial licence."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "SUPIR licence (non-commercial)"
+    source_url: https://github.com/Fanghua-Yu/SUPIR
+    licence_restricted: true
+    media: [image, video]
+    files_dir: supir
+    engine_options: {"sign": "Q"}
+    weights:
+      url: manual:https://github.com/Fanghua-Yu/SUPIR#-model-zoo
+      filename: "SUPIR-v0Q.ckpt"
+    extra_weights:
+      - url: https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_base_1.0_0.9vae.safetensors
+        filename: "sd_xl_base_1.0_0.9vae.safetensors"
+        sha256: e6bb9ea85bbf7bf6478a7c6d18b71246f22e95d41bcdd80ed40aa212c33cfeff
+        size_bytes: 6938078334
+        shared: true
+
+  - id: supir-v0f
+    kind: generative
+    purpose: "Photos with light damage: maximum detail, huge (SUPIR F)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: supir
+    description: "SUPIR (CVPR 2024) on SDXL, checkpoint SUPIR-v0F. Its checkpoint is only on Google Drive and Baidu: download it from the project page and use it with \"Use a file I have\". Needs very much graphics and system memory. Non-commercial licence."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "SUPIR licence (non-commercial)"
+    source_url: https://github.com/Fanghua-Yu/SUPIR
+    licence_restricted: true
+    media: [image, video]
+    files_dir: supir
+    engine_options: {"sign": "F"}
+    weights:
+      url: manual:https://github.com/Fanghua-Yu/SUPIR#-model-zoo
+      filename: "SUPIR-v0F.ckpt"
+    extra_weights:
+      - url: https://huggingface.co/stabilityai/stable-diffusion-xl-base-1.0/resolve/462165984030d82259a11f4367a4eed129e94a7b/sd_xl_base_1.0_0.9vae.safetensors
+        filename: "sd_xl_base_1.0_0.9vae.safetensors"
+        sha256: e6bb9ea85bbf7bf6478a7c6d18b71246f22e95d41bcdd80ed40aa212c33cfeff
+        size_bytes: 6938078334
+        shared: true
+
+  - id: lucidflux
+    kind: generative
+    purpose: "Photos: restoration on FLUX.1, caption-free (LucidFlux)"
+    category: generative
+    scale: 4
+    input: recurrent
+    window: 1
+    engine: lucidflux
+    description: "LucidFlux (ICLR 2026): universal image restoration on FLUX.1-dev. Downloads FLUX.1-dev (gated: accept its licence on huggingface.co and add your Hugging Face token) and its other weights during installation. FLUX.1-dev Non-Commercial License."
+    speed: very-slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "FLUX.1-dev Non-Commercial License"
+    source_url: https://github.com/W2GenAI-Lab/LucidFlux
+    licence_restricted: true
+    media: [image, video]
+    engine_options: {"steps": 20}
+
+  - id: gfpgan-1.4
+    kind: faces
+    purpose: "Restore faces - natural, good identity (GFPGAN 1.4)"
+    category: faces
+    scale: 1
+    input: single
+    window: 1
+    engine: gfpgan
+    description: "GFPGAN 1.4: detects faces in the finished frames, restores them and pastes them back. Downloads its own weights on first use."
+    speed: slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/TencentARC/GFPGAN
+    engine_options: {"version": "1.4"}
+
+  - id: restoreformer
+    kind: faces
+    purpose: "Restore faces - detailed (RestoreFormer)"
+    category: faces
+    scale: 1
+    input: single
+    window: 1
+    engine: gfpgan
+    description: "RestoreFormer: detects faces in the finished frames, restores them and pastes them back. Downloads its own weights on first use."
+    speed: slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/wzhouxiff/RestoreFormer
+    engine_options: {"version": "RestoreFormer"}
+
+  - id: restoreformer-pp
+    kind: faces
+    purpose: "Restore faces - detailed, newer (RestoreFormer++)"
+    category: faces
+    scale: 1
+    input: single
+    window: 1
+    engine: restoreformerpp
+    description: "RestoreFormer++: detects faces in the finished frames, restores them and pastes them back. Downloads its own weights on first use."
+    speed: slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "Apache-2.0"
+    source_url: https://github.com/wzhouxiff/RestoreFormerPlusPlus
+
+  - id: codeformer
+    kind: faces
+    purpose: "Restore faces - strongest, for very blurry faces (CodeFormer)"
+    category: faces
+    scale: 1
+    input: single
+    window: 1
+    engine: codeformer
+    description: "CodeFormer: detects faces in the finished frames, restores them and pastes them back. Downloads its own weights on first use."
+    speed: slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "S-Lab License 1.0 (non-commercial)"
+    source_url: https://github.com/sczhou/CodeFormer
+    licence_restricted: true
+    engine_options: {"fidelity": 0.7}
+
+  - id: keep
+    kind: faces
+    purpose: "Restore faces in video - steady between frames (KEEP)"
+    category: faces
+    scale: 1
+    input: single
+    window: 1
+    engine: keep
+    description: "KEEP: detects faces in the finished frames, restores them and pastes them back. Downloads its own weights on first use."
+    speed: slow
+    content: [live-action, animation]
+    handles: [noise, compression, blur]
+    rank: 0
+    bundled: false
+    licence: "S-Lab License 1.0 (non-commercial)"
+    source_url: https://github.com/jnjaby/KEEP
+    licence_restricted: true

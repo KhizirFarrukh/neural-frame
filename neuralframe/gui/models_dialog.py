@@ -53,9 +53,10 @@ class DownloadController(QObject):
     finished = Signal(str, str, str)
     """model id, outcome (``done`` / ``cancelled`` / ``failed``), error text"""
 
-    def __init__(self, library: ModelLibrary, parent: QObject | None = None) -> None:
+    def __init__(self, library: ModelLibrary, parent: QObject | None = None, *, settings: Any = None) -> None:
         super().__init__(parent)
         self.library = library
+        self.settings = settings
         self._dispatch = Dispatcher(self)
         self._cancel: dict[str, threading.Event] = {}
         self.last: dict[str, DownloadProgress] = {}
@@ -77,7 +78,11 @@ class DownloadController(QObject):
 
         def work() -> None:
             try:
-                if update:
+                if spec.is_engine and self.settings is not None:
+                    from neuralframe.engines.status import install_model
+
+                    install_model(spec, self.settings, self.library, progress=on_progress, cancel=cancel)
+                elif update:
                     self.library.apply_update(spec, progress=on_progress, cancel=cancel)
                 else:
                     self.library.ensure(spec, progress=on_progress, cancel=cancel)
@@ -129,6 +134,10 @@ class ModelRow(QWidget):
         self.delete_button = QPushButton("Delete")
         self.link_button = QPushButton("Use a file I have...")
         self.unlink_button = QPushButton("Stop using my file")
+        self.remove_engine_button = QPushButton("Remove engine")
+        self.remove_engine_button.setToolTip("Delete this engine's environment (Python, PyTorch and packages) to "
+                                             "free space; it is installed again when needed")
+        self.remove_engine_button.clicked.connect(lambda: dialog.remove_engine(spec.id))
         self.download_button.clicked.connect(lambda: dialog.download(spec.id))
         self.cancel_button.clicked.connect(lambda: dialog.controller.cancel(spec.id))
         self.update_button.clicked.connect(lambda: dialog.download(spec.id, update=True))
@@ -139,19 +148,22 @@ class ModelRow(QWidget):
         self.link_button.setToolTip("You already have this model's file (e.g. downloaded it yourself)? Use it "
                                     "instead of downloading it again")
         for w in (self.bar, self.detail, self.download_button, self.cancel_button, self.update_button,
-                  self.delete_button, self.link_button, self.unlink_button):
+                  self.delete_button, self.link_button, self.unlink_button, self.remove_engine_button):
             layout.addWidget(w)
         layout.addStretch(1)
 
-    def show_status(self, status: ModelStatus, downloading: DownloadProgress | None, active: bool) -> None:
+    def show_status(self, status: ModelStatus, downloading: DownloadProgress | None, active: bool,
+                    engine_installed: bool = False) -> None:
         local = status.state in ("linked", "linked-different")
-        has_file = self.spec.weights is not None
+        has_file = self.spec.weights is not None or self.spec.is_engine
+        self.remove_engine_button.setVisible(self.spec.is_engine and engine_installed and not active)
         self.bar.setVisible(active)
         self.detail.setVisible(active)
         self.cancel_button.setVisible(active)
         self.download_button.setVisible(has_file and not active and status.state == "missing")
-        self.download_button.setText("Resume download" if status.partial_bytes else "Download")
-        self.link_button.setVisible(has_file and not active and status.state == "missing")
+        self.download_button.setText("Install" if self.spec.is_engine else
+                                     "Resume download" if status.partial_bytes else "Download")
+        self.link_button.setVisible(self.spec.weights is not None and not active and status.state == "missing")
         self.unlink_button.setVisible(not active and local)
         self.delete_button.setVisible(not active and status.state == "installed")
         self.update_button.setVisible(not active and status.state == "installed" and status.update is not None
@@ -178,9 +190,11 @@ class ModelManager(QDialog):
     """Number of updates found (-1: the check failed)."""
 
     def __init__(self, registry: ModelRegistry, library: ModelLibrary, controller: DownloadController,
-                 parent: QWidget | None = None) -> None:
+                 parent: QWidget | None = None, *, settings: Any = None) -> None:
         super().__init__(parent)
         self.registry, self.library, self.controller = registry, library, controller
+        self.settings = settings
+        self._engine_installed: dict[str, bool] = {}
         self.confirm = True
         """Ask before restricted-licence downloads and deletions (tests switch it off)."""
         self._dispatch = Dispatcher(self)
@@ -254,7 +268,7 @@ class ModelManager(QDialog):
         self.tree.clear()
         self._rows.clear()
         self._parents.clear()
-        for title, models in self.registry.grouped():
+        for title, models in self.registry.grouped(kinds=("sr", "classical", "faces")):
             parent = QTreeWidgetItem([title])
             self._parents[title] = parent
             font = parent.font(0)
@@ -284,14 +298,27 @@ class ModelManager(QDialog):
             if mid not in self._rows:
                 continue
             spec = self.registry.get(mid)
-            status = self.library.status(spec)
-            self._status[mid] = status
             item, row = self._rows[mid]
-            size = f"{status.size_bytes / 1e6:.0f} MB" if status.size_bytes else "-"
+            installed = False
+            if spec.is_engine and self.settings is not None:
+                from neuralframe.engines.status import engine_model_status
+
+                es = engine_model_status(spec, self.settings, self.library)
+                installed = es.env_state == "installed"
+                status = ModelStatus(model=mid, state="installed" if es.ready else "missing", path=None,
+                                     size_bytes=es.download_bytes or (es.files.size_bytes if es.files else None))
+                short, long = ("installed" if es.ready else "not installed"), es.text()
+            else:
+                status = self.library.status(spec)
+                short, long = _short_status(status), status.text()
+            self._status[mid] = status
+            self._engine_installed[mid] = installed
+            nbytes = status.size_bytes or 0
+            size = f"{nbytes / 1e9:.1f} GB" if nbytes >= 1e9 else (f"{nbytes / 1e6:.0f} MB" if nbytes else "-")
             item.setText(3, size)
-            item.setText(4, _short_status(status))
-            item.setToolTip(4, status.text())
-            row.show_status(status, self.controller.last.get(mid), self.controller.is_active(mid))
+            item.setText(4, short)
+            item.setToolTip(4, long)
+            row.show_status(status, self.controller.last.get(mid), self.controller.is_active(mid), installed)
         self.usage_label.setText(f"Models on this computer: {self.library.disk_usage() / 1e9:.2f} GB in "
                                  f"{self.library.models_dir}")
         self.apply_filter()
@@ -331,6 +358,17 @@ class ModelManager(QDialog):
 
     def download(self, model_id: str, *, update: bool = False) -> bool:
         spec = self.registry.get(model_id)
+        if self.confirm and spec.is_engine and not update:
+            from neuralframe.engines.status import describe
+
+            info = describe(spec)
+            answer = QMessageBox.question(
+                self, "Install engine", f"{spec.label}\n\n{info['engine_name']}\n\nThis installs a separate "
+                f"environment (about {info['engine_gb']:.0f} GB: Python, PyTorch and the engine's packages) and "
+                f"downloads the model's files ({spec.download_bytes / 1e9:.1f} GB). Generative models create new, "
+                f"plausible detail and are very slow.\n\n{info['engine_notes']}\n\nInstall now?")
+            if answer != QMessageBox.StandardButton.Yes:
+                return False
         if self.confirm and spec.licence_restricted and not update:
             answer = QMessageBox.question(
                 self, "Licence", f"{spec.label}\n\nThis model's licence ({spec.licence}) allows personal, "
@@ -384,6 +422,21 @@ class ModelManager(QDialog):
             QMessageBox.warning(self, "Model file", error_text(exc))
 
         self._dispatch.run(lambda: self.library.link(spec, path), done, failed, name="nf-link")
+
+    def remove_engine(self, model_id: str) -> None:
+        from neuralframe.engines.status import engine_env
+
+        spec = self.registry.get(model_id)
+        env = engine_env(spec, self.settings)
+        if self.confirm:
+            answer = QMessageBox.question(self, "Remove engine", f"Remove the {env.engine.name} engine "
+                                          f"({env.disk_usage() / 1e9:.1f} GB)? Its models' files are kept; the "
+                                          "engine is installed again when one of them is used.")
+            if answer != QMessageBox.StandardButton.Yes:
+                return
+        env.remove()
+        self.refresh()
+        self.changed.emit(model_id)
 
     def unlink(self, model_id: str) -> None:
         self.library.unlink(self.registry.get(model_id))
