@@ -34,7 +34,8 @@ Tips
   realesrgan-x4plus gives the most detail on real-world video and photos but is slower.
 * The FIRST time you use a model on your graphics card, NeuralFrame optimises it for your card. This
   takes a few minutes once ("building TensorRT engine"); later runs start immediately.
-* Long video? You can press Cancel at any time and later press Resume: finished parts are kept.
+* Long video? You can press Cancel at any time and then Resume while the program is still open:
+  finished parts are kept. (If you close the program in the middle, the job starts over next time.)
 * "Scan for dropped frames" shows whether a video has stutter that frame generation will repair.
 
 

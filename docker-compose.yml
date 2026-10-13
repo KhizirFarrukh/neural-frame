@@ -24,3 +24,4 @@ services:
 
 volumes:
   neuralframe-cache:
+    name: neuralframe-cache # the same volume `docker run -v neuralframe-cache:/cache` uses: one model cache
